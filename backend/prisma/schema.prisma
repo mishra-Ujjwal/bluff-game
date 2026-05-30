@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoomStatus {
+  WAITING
+  PLAYING
+  FINISHED
+}
+
+model User {
+  id            String      @id @default(cuid())
+  username      String      @unique
+  email         String      @unique
+  password      String
+  createdAt     DateTime    @default(now())
+  hostedRooms   Room[]      @relation("RoomHost")
+  playerEntries Player[]
+  wonGames      Game[]      @relation("GameWinner")
+  moves         GameMove[]
+}
+
+model Room {
+  id             String      @id @default(cuid())
+  name           String
+  roomCode       String      @unique
+  hostId         String
+  status         RoomStatus  @default(WAITING)
+  maxPlayers     Int
+  createdAt      DateTime    @default(now())
+  host           User        @relation("RoomHost", fields: [hostId], references: [id], onDelete: Cascade)
+  players        Player[]
+  games          Game[]
+  activeGameId   String?     @unique
+  activeGame     Game?       @relation("ActiveGame", fields: [activeGameId], references: [id])
+}
+
+model Player {
+  id          String   @id @default(cuid())
+  userId      String
+  roomId      String
+  cardsCount  Int      @default(0)
+  joinedAt    DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId])
+}
+
+model Game {
+  id                String      @id @default(cuid())
+  roomId            String
+  winnerId          String?
+  startedAt         DateTime    @default(now())
+  endedAt           DateTime?
+  state             Json
+  pile              Json
+  lastMoveId        String?
+  currentTurnUserId String?
+  status            RoomStatus  @default(PLAYING)
+  room              Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  winner            User?       @relation("GameWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+  moves             GameMove[]
+  activeRoom        Room?       @relation("ActiveGame")
+}
+
+model GameMove {
+  id           String   @id @default(cuid())
+  gameId       String
+  playerId     String
+  claimedRank  String
+  actualCards  Json
+  createdAt    DateTime @default(now())
+  game         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player       User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+}

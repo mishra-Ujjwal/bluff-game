@@ -1,0 +1,45 @@
+import { create } from "zustand";
+import api from "../services/api";
+
+export const useGameStore = create((set) => ({
+  game: null,
+  chat: [],
+  history: [],
+  stats: null,
+  selectedCards: [],
+  claimedRank: "A",
+  timer: { remainingSeconds: 120, currentPlayerId: null, turnTimeLimit: 120 },
+  reconnecting: false,
+  setGame(game) {
+    set({ game });
+  },
+  setTimer(timer) {
+    set({ timer });
+  },
+  setReconnecting(reconnecting) {
+    set({ reconnecting });
+  },
+  addChat(message) {
+    set((state) => ({ chat: [...state.chat, message] }));
+  },
+  resetChat() {
+    set({ chat: [] });
+  },
+  toggleCard(cardId) {
+    set((state) => ({
+      selectedCards: state.selectedCards.includes(cardId)
+        ? state.selectedCards.filter((id) => id !== cardId)
+        : [...state.selectedCards, cardId],
+    }));
+  },
+  clearSelection() {
+    set({ selectedCards: [] });
+  },
+  setClaimedRank(claimedRank) {
+    set({ claimedRank });
+  },
+  async fetchHistory() {
+    const { data } = await api.get("/game/history");
+    set({ history: data.history, stats: data.stats });
+  },
+}));
