@@ -403,7 +403,7 @@ export default function GamePage() {
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1 p-2">
         <section className="flex min-h-0 flex-col gap-3">
          
 
