@@ -1,8 +1,10 @@
 export const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const SUITS = ["S", "H", "D", "C"];
 
-export const createDeck = () =>
-  SUITS.flatMap((suit) => RANKS.map((rank) => ({ id: `${rank}-${suit}`, rank, suit })));
+export const createDeck = (deckCount = 1) =>
+  Array.from({ length: deckCount }, (_, deckIndex) =>
+    SUITS.flatMap((suit) => RANKS.map((rank) => ({ id: `${rank}-${suit}-${deckIndex + 1}-${crypto.randomUUID()}`, rank, suit }))),
+  ).flat();
 
 export const shuffleDeck = (deck) => {
   const copy = [...deck];
@@ -15,8 +17,8 @@ export const shuffleDeck = (deck) => {
   return copy;
 };
 
-export const distributeCards = (players) => {
-  const deck = shuffleDeck(createDeck());
+export const distributeCards = (players, deckCount = 1) => {
+  const deck = shuffleDeck(createDeck(deckCount));
   const hands = {};
 
   players.forEach((player) => {

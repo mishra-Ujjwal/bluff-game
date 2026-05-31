@@ -33,9 +33,9 @@ export default function GameTimer({ remainingSeconds = 120, totalSeconds = 120 }
     <motion.div
       animate={urgent ? { scale: [1, 1.03, 1] } : { scale: 1 }}
       transition={urgent ? { repeat: Number.POSITIVE_INFINITY, duration: 1.2 } : undefined}
-      className="glass-panel flex h-28 w-28 items-center justify-center rounded-full border border-white/10 bg-slate-950/55"
+      className="glass-panel flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-slate-950/55 sm:h-20 sm:w-20 lg:h-28 lg:w-28"
     >
-      <div className="relative h-24 w-24">
+      <div className="relative h-14 w-14 sm:h-16 sm:w-16 lg:h-24 lg:w-24">
         <svg className="-rotate-90" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r={radius} stroke="rgba(255,255,255,0.1)" strokeWidth="8" fill="none" />
           <circle
@@ -51,8 +51,8 @@ export default function GameTimer({ remainingSeconds = 120, totalSeconds = 120 }
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Turn</span>
-          <span className="text-lg font-black text-white">{formatTime(safeRemainingSeconds)}</span>
+          <span className="text-[8px] uppercase tracking-[0.22em] text-slate-400 sm:text-[9px] lg:text-[11px]">Turn</span>
+          <span className="text-[11px] font-black text-white sm:text-sm lg:text-lg">{formatTime(safeRemainingSeconds)}</span>
         </div>
       </div>
     </motion.div>

@@ -43,6 +43,7 @@ const normalizeState = (state) => {
   state.consecutivePasses = state.consecutivePasses ?? 0;
   state.turnStartedAt = state.turnStartedAt || new Date().toISOString();
   state.turnTimeLimit = state.turnTimeLimit || TURN_TIME_LIMIT;
+  state.deckCount = state.deckCount || 1;
   state.pendingWinnerId = state.pendingWinnerId ?? null;
   state.bluffReveal = state.bluffReveal ?? null;
   state.recentRoundEvent = state.recentRoundEvent ?? null;
@@ -84,12 +85,13 @@ export const serializeStateForUser = (state, viewerId) => ({
   lastPlayedBy: state.lastPlayedBy,
   lastPlayedClaimCount: state.lastPlayedClaimCount || 0,
   lastAction: state.lastAction,
-  centerPileCount: state.centerPile.length,
-  pileCount: state.centerPile.length,
+  centerPileCount: state.centerPile.reduce((total, entry) => total + (entry.cards?.length || 0), 0),
+  pileCount: state.centerPile.reduce((total, entry) => total + (entry.cards?.length || 0), 0),
   discardPileCount: state.discardPile.length,
   consecutivePasses: state.consecutivePasses,
   turnStartedAt: state.turnStartedAt,
   turnTimeLimit: state.turnTimeLimit,
+  deckCount: state.deckCount || 1,
   remainingTurnSeconds: getRemainingSeconds(state),
   players: state.players.map((player) => sanitizePlayerForViewer(player, viewerId)),
   me: state.players.find((player) => player.userId === viewerId)
@@ -250,7 +252,7 @@ export const createGameForRoom = async (room) => {
     throw new AppError("At least 2 players are required to start.");
   }
 
-  const hands = distributeCards(room.players);
+  const hands = distributeCards(room.players, room.deckCount || 1);
   const firstPlayerId = room.players[0].userId;
   const state = {
     roomId: room.id,
@@ -270,6 +272,7 @@ export const createGameForRoom = async (room) => {
     consecutivePasses: 0,
     turnStartedAt: new Date().toISOString(),
     turnTimeLimit: TURN_TIME_LIMIT,
+    deckCount: room.deckCount || 1,
     lastAction: `${room.players[0].user.username} starts a new round.`,
     winnerId: null,
     pendingWinnerId: null,
@@ -522,8 +525,8 @@ export const callBluff = async ({ roomCode, callerId }) => {
   state.roundStarterPlayerId = roundWinner.userId;
   updateTurn(state, roundWinner.userId);
   state.lastAction = liar
-    ? `${caller.username} caught the bluff. ${lastPlayer.username} takes the pile and ${caller.username} starts next.`
-    : `${caller.username} was wrong. ${caller.username} takes the pile and ${lastPlayer.username} starts next.`;
+    ? `${caller.username} caught ${lastPlayer.username}'s bluff. ${lastPlayer.username} takes the pile and ${caller.username} starts next.`
+    : `${caller.username} called bluff on ${lastPlayer.username}, but ${lastPlayer.username} was truthful. ${caller.username} takes the pile and ${lastPlayer.username} starts next.`;
   state.recentRoundEvent = {
     type: "bluff-resolved",
     message: state.lastAction,

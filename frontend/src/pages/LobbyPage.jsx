@@ -89,11 +89,20 @@ export default function LobbyPage() {
                 disabled={starting}
                 onClick={() => {
                   setStarting(true);
+                  const resetHandle = window.setTimeout(() => {
+                    setStarting(false);
+                    toast.error("Start game is taking too long. Please try again.");
+                  }, 10000);
+
                   getSocket()?.emit("start-game", { roomCode }, (response) => {
+                    window.clearTimeout(resetHandle);
                     setStarting(false);
                     if (!response.ok) {
                       toast.error(response.message);
+                      return;
                     }
+
+                    navigate(`/game/${roomCode}`);
                   });
                 }}
               >

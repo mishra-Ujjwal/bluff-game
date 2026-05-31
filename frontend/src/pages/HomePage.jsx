@@ -20,6 +20,7 @@ export default function HomePage() {
   const joinRoom = useRoomStore((state) => state.joinRoom);
   const [roomName, setRoomName] = useState("");
   const [maxPlayers, setMaxPlayers] = useState(4);
+  const [deckCount, setDeckCount] = useState(1);
   const [joinCode, setJoinCode] = useState("");
   const [showRules, setShowRules] = useState(false);
   const [action, setAction] = useState(null);
@@ -102,7 +103,11 @@ export default function HomePage() {
 
                   setAction("create");
                   try {
-                    const nextRoom = await createRoom({ roomName: roomName || `${user.username}'s Arena`, maxPlayers });
+                    const nextRoom = await createRoom({
+                      roomName: roomName || `${user.username}'s Arena`,
+                      maxPlayers,
+                      deckCount,
+                    });
                     navigate(`/lobby/${nextRoom.roomCode}`);
                   } catch (error) {
                     toast.error(error.response?.data?.message || "Unable to create room.");
@@ -136,9 +141,16 @@ export default function HomePage() {
               <div className="mt-5 space-y-4">
                 <input className="input-field" value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Room name" />
                 <select className="input-field" value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))}>
-                  {[2, 3, 4, 5, 6].map((value) => (
+                  {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
                     <option key={value} value={value} className="bg-slate-900">
                       {value} players
+                    </option>
+                  ))}
+                </select>
+                <select className="input-field" value={deckCount} onChange={(e) => setDeckCount(Number(e.target.value))}>
+                  {[1, 2].map((value) => (
+                    <option key={value} value={value} className="bg-slate-900">
+                      {value} deck{value > 1 ? "s" : ""}
                     </option>
                   ))}
                 </select>
@@ -151,9 +163,9 @@ export default function HomePage() {
               <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                 <input
                   className="input-field text-center text-2xl font-black uppercase tracking-[0.3em]"
-                  placeholder="ABCD12"
+                  placeholder="123456"
                   value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 12))}
                 />
                 <button
                   className="action-button-primary gap-2"

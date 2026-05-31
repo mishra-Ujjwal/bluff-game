@@ -7,11 +7,12 @@ import { AppError } from "../utils/errors.js";
 
 const createRoomSchema = z.object({
   roomName: z.string().min(3).max(40),
-  maxPlayers: z.number().int().min(2).max(6),
+  maxPlayers: z.number().int().min(2).max(10),
+  deckCount: z.number().int().min(1).max(2),
 });
 
 const joinRoomSchema = z.object({
-  roomCode: z.string().trim().min(4).max(12),
+  roomCode: z.string().trim().regex(/^\d{4,12}$/),
 });
 
 const buildRoomResponse = (room, viewerId) => ({
@@ -20,6 +21,7 @@ const buildRoomResponse = (room, viewerId) => ({
   roomCode: room.roomCode,
   status: room.status,
   maxPlayers: room.maxPlayers,
+  deckCount: room.deckCount,
   createdAt: room.createdAt,
   hostId: room.hostId,
   players: room.players.map((player) => ({
@@ -48,6 +50,7 @@ export const createRoom = async (req, res, next) => {
         roomCode,
         hostId: req.user.id,
         maxPlayers: data.maxPlayers,
+        deckCount: data.deckCount,
         players: {
           create: {
             userId: req.user.id,
@@ -71,7 +74,7 @@ export const joinRoom = async (req, res, next) => {
   try {
     const data = joinRoomSchema.parse(req.body);
     const room = await prisma.room.findUnique({
-      where: { roomCode: data.roomCode.toUpperCase() },
+      where: { roomCode: data.roomCode.trim() },
       include: {
         players: {
           include: { user: { select: { id: true, username: true } } },
@@ -114,7 +117,7 @@ export const joinRoom = async (req, res, next) => {
 export const getRoomByCode = async (req, res, next) => {
   try {
     const room = await prisma.room.findUnique({
-      where: { roomCode: req.params.roomCode.toUpperCase() },
+      where: { roomCode: req.params.roomCode.trim() },
       include: {
         players: {
           include: { user: { select: { id: true, username: true } } },

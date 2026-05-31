@@ -116,6 +116,7 @@ export default function GamePage() {
   const setGame = useGameStore((state) => state.setGame);
   const chat = useGameStore((state) => state.chat);
   const addChat = useGameStore((state) => state.addChat);
+  const resetChat = useGameStore((state) => state.resetChat);
   const selectedCards = useGameStore((state) => state.selectedCards);
   const claimedRank = useGameStore((state) => state.claimedRank);
   const timer = useGameStore((state) => state.timer);
@@ -132,10 +133,12 @@ export default function GamePage() {
   const lastRevealKeyRef = useRef(null);
   const lastWinnerRef = useRef(null);
   const timeoutToastShownRef = useRef(false);
+  const swipeStartRef = useRef(null);
 
   useEffect(() => {
     const socket = getSocket();
     setReconnecting(socket ? !socket.connected : false);
+    resetChat();
 
     fetchRoom(roomCode)
       .then((room) => {
@@ -156,6 +159,11 @@ export default function GamePage() {
     const onGameUpdated = (payload) => {
       if (payload?.players) {
         setGame(payload);
+        setTimer({
+          remainingSeconds: payload.remainingTurnSeconds,
+          currentPlayerId: payload.currentPlayerId,
+          turnTimeLimit: payload.turnTimeLimit,
+        });
         if (payload.bluffReveal) {
           const revealKey = `${payload.bluffReveal.playerId}-${payload.bluffReveal.callerId}-${payload.bluffReveal.actualCards.length}`;
           if (lastRevealKeyRef.current !== revealKey) {
@@ -174,6 +182,10 @@ export default function GamePage() {
       if (payload?.message) {
         toast(payload.message);
       }
+    };
+
+    const onClearChat = () => {
+      resetChat();
     };
 
     const onWinner = ({ winnerId }) => {
@@ -200,6 +212,7 @@ export default function GamePage() {
     socket?.on("auto-pass-timeout", onRoundEvent);
     socket?.on("pass-turn", onRoundEvent);
     socket?.on("bluff-resolved", onRoundEvent);
+    socket?.on("clear-chat", onClearChat);
     socket?.on("error-message", onSocketError);
     socket?.on("disconnect", onDisconnect);
     socket?.on("connect", onConnect);
@@ -214,11 +227,12 @@ export default function GamePage() {
       socket?.off("auto-pass-timeout", onRoundEvent);
       socket?.off("pass-turn", onRoundEvent);
       socket?.off("bluff-resolved", onRoundEvent);
+      socket?.off("clear-chat", onClearChat);
       socket?.off("error-message", onSocketError);
       socket?.off("disconnect", onDisconnect);
       socket?.off("connect", onConnect);
     };
-  }, [addChat, fetchRoom, game?.players, navigate, roomCode, setGame, setReconnecting, setTimer]);
+  }, [addChat, fetchRoom, game?.players, navigate, resetChat, roomCode, setGame, setReconnecting, setTimer]);
 
   useEffect(() => {
     if (timer.remainingSeconds <= 0 && !timeoutToastShownRef.current) {
@@ -266,8 +280,37 @@ export default function GamePage() {
   };
 
   return (
-    <main className="h-dvh w-full overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 lg:overflow-hidden">
-      <div className="mx-auto flex min-h-full w-full max-w-[1600px] min-w-0 flex-col gap-3 lg:h-full">
+    <main
+      className="h-dvh w-full overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4"
+      onTouchStart={(event) => {
+        const touch = event.changedTouches?.[0];
+        if (!touch) {
+          return;
+        }
+
+        swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+      }}
+      onTouchEnd={(event) => {
+        const touch = event.changedTouches?.[0];
+        const start = swipeStartRef.current;
+
+        if (!touch || !start) {
+          return;
+        }
+
+        const deltaX = touch.clientX - start.x;
+        const deltaY = Math.abs(touch.clientY - start.y);
+
+        if (start.x <= 28 && deltaX > 90 && deltaY < 70) {
+          if (window.confirm("Do you want to exit this game table?")) {
+            navigate("/");
+          }
+        }
+
+        swipeStartRef.current = null;
+      }}
+    >
+      <div className="mx-auto flex min-h-full w-full max-w-[1600px] min-w-0 flex-col gap-3">
       <div className="flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3 lg:hidden">
           <button
@@ -358,7 +401,7 @@ export default function GamePage() {
       </div>
 
       <div className="relative min-h-0 flex-1">
-        <section className="flex min-h-0 flex-col gap-3 lg:h-full lg:overflow-hidden">
+        <section className="flex min-h-0 flex-col gap-3">
          
 
           <motion.section
@@ -366,19 +409,8 @@ export default function GamePage() {
             animate={{ opacity: 1, y: 0 }}
             className="table-felt relative h-[240px] shrink-0 overflow-hidden rounded-[2rem] border px-3 py-3 sm:h-[280px] sm:px-4 sm:py-4 lg:h-[360px] lg:px-5 lg:py-5 xl:h-[390px]"
           >
-            <div className="absolute left-4 top-4">
+            <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
               <GameTimer remainingSeconds={timer.remainingSeconds} totalSeconds={timer.turnTimeLimit || 120} />
-            </div>
-
-            <div className="absolute right-3 top-3 max-w-[10rem] rounded-[1rem] border border-amber-400/25 bg-slate-950/45 p-2.5 sm:right-4 sm:top-4 sm:max-w-[13rem] sm:rounded-[1.25rem] sm:p-3 lg:max-w-[15rem]">
-              <p className="text-xs uppercase tracking-[0.3em] text-amber-300">Table Status</p>
-              <p className="mt-2 text-sm font-semibold text-white lg:text-base">
-                {isMyTurn ? "It is your turn" : `Waiting for ${currentPlayer?.username || "the next player"}`}
-              </p>
-              <p className="mt-2 text-xs text-slate-300 lg:text-sm">
-                Current Claim: <span className="font-bold text-sky-300">{game.currentRoundRank || "Choose a rank"}</span>
-              </p>
-              <p className="mt-2 line-clamp-3 text-xs text-slate-400 lg:line-clamp-4 lg:text-sm">{game.lastAction}</p>
             </div>
 
             <div className="mx-auto mt-10 flex h-full max-w-xs flex-col items-center justify-center sm:max-w-sm lg:mt-8 lg:max-w-md">
@@ -399,11 +431,14 @@ export default function GamePage() {
                   </div>
                   <p className="text-center text-xs uppercase tracking-[0.35em] text-slate-300 sm:text-sm">Pile</p>
                   <p className="mt-1 text-center text-xl font-black text-white sm:text-2xl lg:text-3xl">{game.centerPileCount} cards</p>
-                  <p className="mt-2 text-center text-[11px] text-slate-300 sm:text-xs lg:text-sm">
-                    {game.currentRoundRank ? `Current Claim: ${game.currentRoundRank}` : "Fresh round waiting for a claim"}
-                  </p>
                 </div>
               </motion.div>
+              <div className="mt-3 max-w-[16rem] text-center sm:max-w-[18rem]">
+                {game.currentRoundRank ? (
+                  <p className="text-[11px] font-semibold text-sky-300 sm:text-xs lg:text-sm">Current Claim: {game.currentRoundRank}</p>
+                ) : null}
+                <p className="mt-1 text-[11px] text-slate-300 sm:text-xs lg:text-sm">{game.lastAction}</p>
+              </div>
             </div>
           </motion.section>
 
@@ -411,10 +446,10 @@ export default function GamePage() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.04 }}
-            className="grid gap-3 lg:hidden sm:grid-cols-2"
+            className="lg:hidden"
           >
-            <div className="glass-panel rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-3">
-              <div className="min-w-[7rem]">
+            <div className="scrollbar-thin flex gap-2 overflow-x-auto rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-3">
+              <div className="min-w-[5.5rem] shrink-0">
                 <select
                   className="input-field"
                   value={effectiveClaimRank}
@@ -429,7 +464,7 @@ export default function GamePage() {
                 </select>
               </div>
               <button
-                className="action-button-primary mt-3 w-full justify-center"
+                className="action-button-primary min-w-[8rem] shrink-0 justify-center"
                 disabled={handDisabled || selectedCards.length === 0 || !!actionLoading.play}
                 onClick={() =>
                   runAction("play", (done) =>
@@ -439,18 +474,15 @@ export default function GamePage() {
               >
                 {actionLoading.play ? "Playing..." : "Play Cards"}
               </button>
-            </div>
-
-            <div className="glass-panel rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-3">
               <button
-                className="action-button-secondary w-full justify-center"
+                className="action-button-secondary min-w-[6rem] shrink-0 justify-center"
                 disabled={!isMyTurn || (isNewRound && isRoundStarter) || !!actionLoading.pass}
                 onClick={() => runAction("pass", (done) => getSocket()?.emit("pass-turn", { roomCode }, done))}
               >
                 {actionLoading.pass ? "Passing..." : controlsLockedForWinnerAcceptance ? "Accept Win" : "Pass"}
               </button>
               <button
-                className="action-button-secondary mt-3 w-full justify-center border border-red-400/25 text-red-200"
+                className="action-button-secondary min-w-[7.5rem] shrink-0 justify-center border border-red-400/25 text-red-200"
                 disabled={!canCallBluff || !!actionLoading.bluff}
                 onClick={() => runAction("bluff", (done) => getSocket()?.emit("call-bluff", { roomCode }, done))}
               >
@@ -465,7 +497,11 @@ export default function GamePage() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 }}
-            className="glass-panel flex min-h-[260px] flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/50 p-3 sm:min-h-[300px] sm:p-4 lg:min-h-0 lg:h-full"
+            className={`glass-panel flex min-h-[260px] flex-col overflow-hidden rounded-[2rem] border bg-slate-950/50 p-3 sm:min-h-[300px] sm:p-4 ${
+              isMyTurn
+                ? "border-sky-300/60 shadow-[0_0_30px_rgba(56,189,248,0.18)]"
+                : "border-white/10"
+            }`}
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div>
@@ -481,8 +517,10 @@ export default function GamePage() {
               </div>
             </div>
 
-            <div className="mt-3 flex min-h-[8rem] flex-1 rounded-[1.5rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.4),rgba(15,23,42,0.2))] px-2 py-2 lg:min-h-0">
-              <div className="scrollbar-thin flex h-full min-h-[8rem] w-full items-end overflow-x-auto overflow-y-hidden pb-1 sm:min-h-[10.5rem] lg:min-h-0">
+            <div className={`mt-3 flex min-h-[8rem] flex-1 rounded-[1.5rem] border bg-[linear-gradient(180deg,rgba(15,23,42,0.4),rgba(15,23,42,0.2))] px-2 py-2 ${
+              isMyTurn ? "border-sky-300/40" : "border-white/10"
+            }`}>
+              <div className="scrollbar-thin flex h-full min-h-[8rem] w-full items-end overflow-x-auto overflow-y-hidden pb-1 sm:min-h-[10.5rem]">
                 {me?.hand?.length ? (
                   me.hand.map((card, index) => (
                     <PlayingCard

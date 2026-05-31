@@ -19,6 +19,16 @@ const emitRoomSnapshot = (io, state) => {
   });
 };
 
+const emitTimerSnapshot = (io, roomCode, state) => {
+  io.to(roomCode).emit("timer-update", {
+    roomCode,
+    currentPlayerId: state.currentPlayerId,
+    remainingSeconds: getRemainingSeconds(state),
+    turnStartedAt: state.turnStartedAt,
+    turnTimeLimit: state.turnTimeLimit,
+  });
+};
+
 const emitLobbySnapshot = async (io, roomCode) => {
   const room = await prisma.room.findUnique({
     where: { roomCode },
@@ -64,6 +74,7 @@ const ensureSocketMembership = async (roomCode, userId) => {
 const emitWinnerIfNeeded = (io, roomCode, state) => {
   if (state.winnerId) {
     io.to(roomCode).emit("winner", { winnerId: state.winnerId });
+    io.to(roomCode).emit("clear-chat", { roomCode });
   }
 };
 
@@ -93,13 +104,7 @@ const scheduleTurnMonitor = (io, roomCode) => {
       return;
     }
 
-    io.to(roomCode).emit("timer-update", {
-      roomCode,
-      currentPlayerId: state.currentPlayerId,
-      remainingSeconds: getRemainingSeconds(state),
-      turnStartedAt: state.turnStartedAt,
-      turnTimeLimit: state.turnTimeLimit,
-    });
+    emitTimerSnapshot(io, roomCode, state);
 
     if (state.winnerId) {
       clearTurnMonitor(roomCode);
@@ -213,6 +218,7 @@ export const configureSocket = (io) => {
             hostId: true,
             status: true,
             maxPlayers: true,
+            deckCount: true,
           },
         });
 
@@ -241,10 +247,12 @@ export const configureSocket = (io) => {
           ...room,
           players,
         });
+
+        callback?.({ ok: true });
         io.to(normalizedRoomCode).emit("start-game", { roomCode: normalizedRoomCode });
         emitRoomSnapshot(io, state);
+        emitTimerSnapshot(io, normalizedRoomCode, state);
         scheduleTurnMonitor(io, normalizedRoomCode);
-        callback?.({ ok: true });
       } catch (error) {
         callback?.({ ok: false, message: error.message });
       }
@@ -260,6 +268,7 @@ export const configureSocket = (io) => {
         });
 
         emitRoomSnapshot(io, state);
+        emitTimerSnapshot(io, payload.roomCode, state);
         emitRoundEvents(io, payload.roomCode, state);
         emitWinnerIfNeeded(io, payload.roomCode, state);
         scheduleTurnMonitor(io, payload.roomCode);
@@ -277,6 +286,7 @@ export const configureSocket = (io) => {
           reason: "manual",
         });
         emitRoomSnapshot(io, state);
+        emitTimerSnapshot(io, roomCode, state);
         emitRoundEvents(io, roomCode, state);
         emitWinnerIfNeeded(io, roomCode, state);
         scheduleTurnMonitor(io, roomCode);
@@ -290,6 +300,7 @@ export const configureSocket = (io) => {
       try {
         const state = await callBluff({ roomCode, callerId: user.userId });
         emitRoomSnapshot(io, state);
+        emitTimerSnapshot(io, roomCode, state);
         emitRoundEvents(io, roomCode, state);
         emitWinnerIfNeeded(io, roomCode, state);
         scheduleTurnMonitor(io, roomCode);
