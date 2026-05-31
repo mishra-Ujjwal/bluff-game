@@ -11,18 +11,23 @@ const getRingColor = (remainingSeconds) => {
 };
 
 const formatTime = (seconds) => {
-  const mins = String(Math.floor(seconds / 60)).padStart(2, "0");
-  const secs = String(seconds % 60).padStart(2, "0");
+  const safeSeconds = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  const mins = String(Math.floor(safeSeconds / 60)).padStart(2, "0");
+  const secs = String(safeSeconds % 60).padStart(2, "0");
   return `${mins}:${secs}`;
 };
 
 export default function GameTimer({ remainingSeconds = 120, totalSeconds = 120 }) {
+  const safeTotalSeconds = Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : 120;
+  const safeRemainingSeconds = Number.isFinite(remainingSeconds)
+    ? Math.min(safeTotalSeconds, Math.max(0, Math.floor(remainingSeconds)))
+    : safeTotalSeconds;
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
-  const progress = remainingSeconds / totalSeconds;
+  const progress = safeRemainingSeconds / safeTotalSeconds;
   const offset = circumference * (1 - progress);
-  const ringColor = getRingColor(remainingSeconds);
-  const urgent = remainingSeconds <= 20;
+  const ringColor = getRingColor(safeRemainingSeconds);
+  const urgent = safeRemainingSeconds > 0 && safeRemainingSeconds <= 20;
 
   return (
     <motion.div
@@ -47,7 +52,7 @@ export default function GameTimer({ remainingSeconds = 120, totalSeconds = 120 }
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Turn</span>
-          <span className="text-lg font-black text-white">{formatTime(remainingSeconds)}</span>
+          <span className="text-lg font-black text-white">{formatTime(safeRemainingSeconds)}</span>
         </div>
       </div>
     </motion.div>

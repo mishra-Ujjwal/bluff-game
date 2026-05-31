@@ -131,6 +131,7 @@ export default function GamePage() {
   const [winnerOpen, setWinnerOpen] = useState(false);
   const lastRevealKeyRef = useRef(null);
   const lastWinnerRef = useRef(null);
+  const timeoutToastShownRef = useRef(false);
 
   useEffect(() => {
     const socket = getSocket();
@@ -220,8 +221,13 @@ export default function GamePage() {
   }, [addChat, fetchRoom, game?.players, navigate, roomCode, setGame, setReconnecting, setTimer]);
 
   useEffect(() => {
-    if (timer.remainingSeconds === 0) {
+    if (timer.remainingSeconds <= 0 && !timeoutToastShownRef.current) {
+      timeoutToastShownRef.current = true;
       toast.error("Time over! Auto pass.");
+    }
+
+    if (timer.remainingSeconds > 0) {
+      timeoutToastShownRef.current = false;
     }
   }, [timer.remainingSeconds]);
 
@@ -260,15 +266,10 @@ export default function GamePage() {
   };
 
   return (
-    <main className="h-[calc(100vh-73px)] w-full overflow-y-auto overflow-x-hidden px-3 pt-3 pb-3 sm:px-4 sm:pt-4 sm:pb-4 lg:overflow-hidden">
+    <main className="h-dvh w-full overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 lg:overflow-hidden">
       <div className="mx-auto flex min-h-full w-full max-w-[1600px] min-w-0 flex-col gap-3 lg:h-full">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-        <div className="flex min-w-0 flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-          <button className="action-button-secondary gap-2" onClick={() => setShowChat((value) => !value)}>
-            <MessageCircleMore size={16} />
-            {showChat ? "Hide Chat" : "Show Chat"}
-          </button>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-3 lg:hidden">
           <button
             className="action-button-secondary gap-2 border border-red-400/20 text-red-200"
             onClick={() => {
@@ -280,8 +281,53 @@ export default function GamePage() {
             <DoorOpen size={16} />
             Exit
           </button>
+
+          <div className="flex items-center gap-2">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-slate-950/55 px-2 text-center text-xs font-semibold text-white">
+              {user?.username || "Guest"}
+            </div>
+            <button
+              className="action-button-secondary gap-2"
+              onClick={async () => {
+                await navigator.clipboard.writeText(game.roomCode);
+                toast.success("Room code copied.");
+              }}
+            >
+              <Copy size={16} />
+              {game.roomCode}
+            </button>
           </div>
-           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-2">
+        </div>
+
+        <div className="scrollbar-thin flex gap-3 overflow-x-auto pb-1 lg:hidden">
+          {topPlayers.map((player) => (
+            <div key={player.userId} className="min-w-[220px] shrink-0">
+              <PlayerBadge
+                player={player}
+                isTurn={player.userId === game.currentPlayerId}
+                isMe={player.userId === user?.id}
+                compact
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden lg:flex lg:items-start lg:justify-between lg:gap-3">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <button
+              className="action-button-secondary gap-2 border border-red-400/20 text-red-200"
+              onClick={() => {
+                if (window.confirm("Are you sure you want to leave this game table?")) {
+                  navigate("/");
+                }
+              }}
+            >
+              <DoorOpen size={16} />
+              Exit
+            </button>
+          </div>
+
+          <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:mx-4 lg:max-w-[760px]">
             {topPlayers.map((player) => (
               <PlayerBadge
                 key={player.userId}
@@ -292,21 +338,22 @@ export default function GamePage() {
               />
             ))}
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 xl:justify-end">
-          <div className="rounded-full border border-white/10 bg-slate-950/50 px-4 py-2 text-sm text-slate-300">
-            Profile: <span className="font-semibold text-white">{user?.username || "Guest"}</span>
+
+          <div className="flex shrink-0 flex-wrap items-center gap-3 lg:justify-end">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full border border-white/10 bg-slate-950/55 px-3 text-center text-sm font-semibold text-white lg:h-24 lg:w-24 lg:text-base">
+              {user?.username || "Guest"}
+            </div>
+            <button
+              className="action-button-secondary gap-2"
+              onClick={async () => {
+                await navigator.clipboard.writeText(game.roomCode);
+                toast.success("Room code copied.");
+              }}
+            >
+              <Copy size={16} />
+              {game.roomCode}
+            </button>
           </div>
-          <button
-            className="action-button-secondary gap-2"
-            onClick={async () => {
-              await navigator.clipboard.writeText(game.roomCode);
-              toast.success("Room code copied.");
-            }}
-          >
-            <Copy size={16} />
-            {game.roomCode}
-          </button>
         </div>
       </div>
 
@@ -317,13 +364,13 @@ export default function GamePage() {
           <motion.section
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            className="table-felt relative h-[240px] shrink-0 overflow-hidden rounded-[2rem] border px-3 py-3 sm:h-[280px] sm:px-4 sm:py-4 lg:h-[360px] lg:px-5 lg:py-5"
+            className="table-felt relative h-[240px] shrink-0 overflow-hidden rounded-[2rem] border px-3 py-3 sm:h-[280px] sm:px-4 sm:py-4 lg:h-[360px] lg:px-5 lg:py-5 xl:h-[390px]"
           >
             <div className="absolute left-4 top-4">
               <GameTimer remainingSeconds={timer.remainingSeconds} totalSeconds={timer.turnTimeLimit || 120} />
             </div>
 
-            <div className="absolute right-3 top-3 max-w-[11rem] rounded-[1rem] border border-amber-400/25 bg-slate-950/45 p-2.5 sm:right-4 sm:top-4 sm:max-w-[13rem] sm:rounded-[1.25rem] sm:p-3 lg:max-w-[15rem]">
+            <div className="absolute right-3 top-3 max-w-[10rem] rounded-[1rem] border border-amber-400/25 bg-slate-950/45 p-2.5 sm:right-4 sm:top-4 sm:max-w-[13rem] sm:rounded-[1.25rem] sm:p-3 lg:max-w-[15rem]">
               <p className="text-xs uppercase tracking-[0.3em] text-amber-300">Table Status</p>
               <p className="mt-2 text-sm font-semibold text-white lg:text-base">
                 {isMyTurn ? "It is your turn" : `Waiting for ${currentPlayer?.username || "the next player"}`}
@@ -334,12 +381,12 @@ export default function GamePage() {
               <p className="mt-2 line-clamp-3 text-xs text-slate-400 lg:line-clamp-4 lg:text-sm">{game.lastAction}</p>
             </div>
 
-            <div className="mx-auto mt-10 flex h-full max-w-xs flex-col items-center justify-center sm:max-w-sm lg:mt-12 lg:max-w-md">
+            <div className="mx-auto mt-10 flex h-full max-w-xs flex-col items-center justify-center sm:max-w-sm lg:mt-8 lg:max-w-md">
               <motion.div
                 key={game.centerPileCount}
                 initial={{ scale: 0.95, opacity: 0.85 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="relative flex h-24 w-36 items-center justify-center rounded-[50%] border border-amber-300/45 bg-slate-950/35 px-3 sm:h-28 sm:w-44 lg:h-32 lg:w-52"
+                className="relative flex h-24 w-36 items-center justify-center rounded-[2rem] border border-amber-300/45 bg-slate-950/35 px-3 sm:h-28 sm:w-44 lg:h-44 lg:w-72 lg:rounded-[2.25rem]"
               >
                 <div className="absolute inset-4 rounded-[50%] border border-white/10" />
                 <div className="relative">
@@ -363,8 +410,62 @@ export default function GamePage() {
           <motion.section
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.04 }}
+            className="grid gap-3 lg:hidden sm:grid-cols-2"
+          >
+            <div className="glass-panel rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-3">
+              <div className="min-w-[7rem]">
+                <select
+                  className="input-field"
+                  value={effectiveClaimRank}
+                  disabled={!isMyTurn || !isNewRound || controlsLockedForWinnerAcceptance}
+                  onChange={(event) => setClaimedRank(event.target.value)}
+                >
+                  {RANKS.map((rank) => (
+                    <option key={rank} value={rank} className="bg-slate-900">
+                      {rank}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                className="action-button-primary mt-3 w-full justify-center"
+                disabled={handDisabled || selectedCards.length === 0 || !!actionLoading.play}
+                onClick={() =>
+                  runAction("play", (done) =>
+                    getSocket()?.emit("play-cards", { roomCode, cards: selectedCards, claimedRank: effectiveClaimRank }, done),
+                  )
+                }
+              >
+                {actionLoading.play ? "Playing..." : "Play Cards"}
+              </button>
+            </div>
+
+            <div className="glass-panel rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-3">
+              <button
+                className="action-button-secondary w-full justify-center"
+                disabled={!isMyTurn || (isNewRound && isRoundStarter) || !!actionLoading.pass}
+                onClick={() => runAction("pass", (done) => getSocket()?.emit("pass-turn", { roomCode }, done))}
+              >
+                {actionLoading.pass ? "Passing..." : controlsLockedForWinnerAcceptance ? "Accept Win" : "Pass"}
+              </button>
+              <button
+                className="action-button-secondary mt-3 w-full justify-center border border-red-400/25 text-red-200"
+                disabled={!canCallBluff || !!actionLoading.bluff}
+                onClick={() => runAction("bluff", (done) => getSocket()?.emit("call-bluff", { roomCode }, done))}
+              >
+                <AlertTriangle size={16} className="mr-2" />
+                {actionLoading.bluff ? "Calling..." : "Call Bluff"}
+              </button>
+            </div>
+          </motion.section>
+
+          <div className="flex min-h-0 flex-col gap-3 lg:grid lg:flex-1 lg:grid-cols-[minmax(0,1fr)_260px]">
+          <motion.section
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 }}
-            className="glass-panel flex min-h-[260px] flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/50 p-3 sm:min-h-[300px] sm:p-4 lg:h-[320px] lg:flex-1"
+            className="glass-panel flex min-h-[260px] flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/50 p-3 sm:min-h-[300px] sm:p-4 lg:min-h-0 lg:h-full"
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div>
@@ -378,52 +479,10 @@ export default function GamePage() {
                       : `Waiting for ${currentPlayer?.username || "another player"}`}
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="min-w-[7rem] sm:min-w-[8rem]">
-                  <select
-                    className="input-field"
-                    value={effectiveClaimRank}
-                    disabled={!isMyTurn || !isNewRound || controlsLockedForWinnerAcceptance}
-                    onChange={(event) => setClaimedRank(event.target.value)}
-                  >
-                    {RANKS.map((rank) => (
-                      <option key={rank} value={rank} className="bg-slate-900">
-                        {rank}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  className="action-button-primary"
-                  disabled={handDisabled || selectedCards.length === 0 || !!actionLoading.play}
-                  onClick={() =>
-                    runAction("play", (done) =>
-                      getSocket()?.emit("play-cards", { roomCode, cards: selectedCards, claimedRank: effectiveClaimRank }, done),
-                    )
-                  }
-                >
-                  {actionLoading.play ? "Playing..." : "Play Cards"}
-                </button>
-                <button
-                  className="action-button-secondary"
-                  disabled={!isMyTurn || (isNewRound && isRoundStarter) || !!actionLoading.pass}
-                  onClick={() => runAction("pass", (done) => getSocket()?.emit("pass-turn", { roomCode }, done))}
-                >
-                  {actionLoading.pass ? "Passing..." : controlsLockedForWinnerAcceptance ? "Accept Win" : "Pass"}
-                </button>
-                <button
-                  className="action-button-secondary border border-red-400/25 text-red-200"
-                  disabled={!canCallBluff || !!actionLoading.bluff}
-                  onClick={() => runAction("bluff", (done) => getSocket()?.emit("call-bluff", { roomCode }, done))}
-                >
-                  <AlertTriangle size={16} className="mr-2" />
-                  {actionLoading.bluff ? "Calling..." : "Call Bluff"}
-                </button>
-              </div>
             </div>
 
-            <div className="mt-3 flex-1 rounded-[1.5rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.4),rgba(15,23,42,0.2))] px-2 py-2">
-              <div className="scrollbar-thin flex h-full min-h-[8rem] items-end overflow-x-auto overflow-y-hidden pb-1 sm:min-h-[10.5rem]">
+            <div className="mt-3 flex min-h-[8rem] flex-1 rounded-[1.5rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.4),rgba(15,23,42,0.2))] px-2 py-2 lg:min-h-0">
+              <div className="scrollbar-thin flex h-full min-h-[8rem] w-full items-end overflow-x-auto overflow-y-hidden pb-1 sm:min-h-[10.5rem] lg:min-h-0">
                 {me?.hand?.length ? (
                   me.hand.map((card, index) => (
                     <PlayingCard
@@ -448,6 +507,60 @@ export default function GamePage() {
             </div>
           </motion.section>
 
+          <motion.aside
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08 }}
+            className="hidden lg:flex lg:h-full lg:flex-col lg:justify-end lg:gap-4"
+          >
+            <div className="glass-panel rounded-[2rem] border border-white/10 bg-slate-950/55 p-4">
+              <div className="min-w-[7rem]">
+                <select
+                  className="input-field"
+                  value={effectiveClaimRank}
+                  disabled={!isMyTurn || !isNewRound || controlsLockedForWinnerAcceptance}
+                  onChange={(event) => setClaimedRank(event.target.value)}
+                >
+                  {RANKS.map((rank) => (
+                    <option key={rank} value={rank} className="bg-slate-900">
+                      {rank}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                className="action-button-primary mt-4 w-full justify-center"
+                disabled={handDisabled || selectedCards.length === 0 || !!actionLoading.play}
+                onClick={() =>
+                  runAction("play", (done) =>
+                    getSocket()?.emit("play-cards", { roomCode, cards: selectedCards, claimedRank: effectiveClaimRank }, done),
+                  )
+                }
+              >
+                {actionLoading.play ? "Playing..." : "Play Cards"}
+              </button>
+            </div>
+
+            <div className="glass-panel rounded-[2rem] border border-white/10 bg-slate-950/55 p-4">
+              <button
+                className="action-button-secondary w-full justify-center"
+                disabled={!isMyTurn || (isNewRound && isRoundStarter) || !!actionLoading.pass}
+                onClick={() => runAction("pass", (done) => getSocket()?.emit("pass-turn", { roomCode }, done))}
+              >
+                {actionLoading.pass ? "Passing..." : controlsLockedForWinnerAcceptance ? "Accept Win" : "Pass"}
+              </button>
+              <button
+                className="action-button-secondary mt-4 w-full justify-center border border-red-400/25 text-red-200"
+                disabled={!canCallBluff || !!actionLoading.bluff}
+                onClick={() => runAction("bluff", (done) => getSocket()?.emit("call-bluff", { roomCode }, done))}
+              >
+                <AlertTriangle size={16} className="mr-2" />
+                {actionLoading.bluff ? "Calling..." : "Call Bluff"}
+              </button>
+            </div>
+          </motion.aside>
+          </div>
+
           {/* <div className="-mt-1">
             <PlayerBadge player={me} isTurn={isMyTurn} isMe compact />
           </div> */}
@@ -459,7 +572,7 @@ export default function GamePage() {
               initial={{ opacity: 0, x: 20, y: -8 }}
               animate={{ opacity: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, x: 20, y: -8 }}
-              className="absolute right-0 top-0 z-30 h-[min(72vh,520px)] w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-[2rem] sm:max-w-[380px] lg:max-w-[420px]"
+              className="absolute bottom-20 right-0 top-auto z-30 h-[min(72vh,520px)] w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-[2rem] sm:max-w-[380px] lg:bottom-0 lg:max-w-[360px]"
             >
               <div className="absolute right-4 top-4 z-10">
                 <button className="action-button-secondary p-2" onClick={() => setShowChat(false)}>
@@ -480,6 +593,13 @@ export default function GamePage() {
         </AnimatePresence>
       </div>
       </div>
+
+      <button
+        className="fixed bottom-5 right-5 z-20 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-slate-950/88 text-center text-xs font-semibold text-white shadow-2xl sm:h-20 sm:w-20 sm:text-sm"
+        onClick={() => setShowChat((value) => !value)}
+      >
+        {showChat ? "Hide chat" : "Show chat"}
+      </button>
 
       <AnimatePresence>
         {reconnecting ? (

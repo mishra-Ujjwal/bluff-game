@@ -14,7 +14,15 @@ export const useGameStore = create((set) => ({
     set({ game });
   },
   setTimer(timer) {
-    set({ timer });
+    set((state) => ({
+      timer: {
+        remainingSeconds: 120,
+        currentPlayerId: null,
+        turnTimeLimit: 120,
+        ...state.timer,
+        ...timer,
+      },
+    }));
   },
   setReconnecting(reconnecting) {
     set({ reconnecting });
