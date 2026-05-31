@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, Clock3, Copy, DoorOpen, MessageCircleMore, ShieldAlert, Trophy, X } from "lucide-react";
+import { AlertTriangle, Clock3, Copy, DoorOpen, MessageCircleMore, ShieldAlert, Trophy, UserRound, X } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import ChatPanel from "../components/ChatPanel";
@@ -326,8 +326,11 @@ export default function GamePage() {
           </button>
 
           <div className="flex items-center gap-2">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-slate-950/55 px-2 text-center text-xs font-semibold text-white">
-              {user?.username || "Guest"}
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/55 px-3 py-2 text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-400/15 text-sky-300">
+                <UserRound size={16} />
+              </span>
+              <span className="max-w-[5.5rem] truncate text-xs font-semibold">{user?.username || "Guest"}</span>
             </div>
             <button
               className="action-button-secondary gap-2"
@@ -409,11 +412,17 @@ export default function GamePage() {
             animate={{ opacity: 1, y: 0 }}
             className="table-felt relative h-[240px] shrink-0 overflow-hidden rounded-[2rem] border px-3 py-3 sm:h-[280px] sm:px-4 sm:py-4 lg:h-[360px] lg:px-5 lg:py-5 xl:h-[390px]"
           >
+            {isMyTurn ? (
+              <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-sky-300/35 bg-sky-400/15 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-sky-200 shadow-[0_0_18px_rgba(56,189,248,0.22)]">
+                Your Turn
+              </div>
+            ) : null}
             <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
               <GameTimer remainingSeconds={timer.remainingSeconds} totalSeconds={timer.turnTimeLimit || 120} />
             </div>
 
-            <div className="mx-auto mt-10 flex h-full max-w-xs flex-col items-center justify-center sm:max-w-sm lg:mt-8 lg:max-w-md">
+            <div className="mx-auto mt-12 flex h-full max-w-xs flex-col items-center justify-center sm:max-w-sm lg:mt-8 lg:max-w-md">
+              
               <motion.div
                 key={game.centerPileCount}
                 initial={{ scale: 0.95, opacity: 0.85 }}
@@ -433,11 +442,11 @@ export default function GamePage() {
                   <p className="mt-1 text-center text-xl font-black text-white sm:text-2xl lg:text-3xl">{game.centerPileCount} cards</p>
                 </div>
               </motion.div>
-              <div className="mt-3 max-w-[16rem] text-center sm:max-w-[18rem]">
+              <div className="mt-5 max-w-[17rem] px-3 text-center sm:max-w-[18rem]">
                 {game.currentRoundRank ? (
                   <p className="text-[11px] font-semibold text-sky-300 sm:text-xs lg:text-sm">Current Claim: {game.currentRoundRank}</p>
                 ) : null}
-                <p className="mt-1 text-[11px] text-slate-300 sm:text-xs lg:text-sm">{game.lastAction}</p>
+                <p className="mt-2 leading-5 text-[11px] text-slate-300 sm:text-xs lg:text-sm">{game.lastAction}</p>
               </div>
             </div>
           </motion.section>
