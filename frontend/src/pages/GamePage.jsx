@@ -423,25 +423,24 @@ export default function GamePage() {
 
             <div className="mx-auto mt-12 flex h-full max-w-xs flex-col items-center justify-center sm:max-w-sm lg:mt-8 lg:max-w-md">
               
-              <motion.div
-                key={game.centerPileCount}
-                initial={{ scale: 0.95, opacity: 0.85 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="relative flex h-24 w-36 items-center justify-center rounded-[2rem] border border-amber-300/45 bg-slate-950/35 px-3 sm:h-28 sm:w-44 lg:h-44 lg:w-72 lg:rounded-[2.25rem]"
-              >
-                <div className="absolute inset-4 rounded-[50%] border border-white/10" />
-                <div className="relative">
-                  <div className="mb-4 flex justify-center">
-                    {[0, 1, 2].map((index) => (
-                      <div key={index} className="-ml-6 first:ml-0">
-                        <PlayingCard faceDown card={{ id: `back-${index}` }} index={index} />
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-center text-xs uppercase tracking-[0.35em] text-slate-300 sm:text-sm">Pile</p>
-                  <p className="mt-1 text-center text-xl font-black text-white sm:text-2xl lg:text-3xl">{game.centerPileCount} cards</p>
-                </div>
-              </motion.div>
+             <motion.div
+  key={game.centerPileCount}
+  initial={{ scale: 0.95, opacity: 0.85 }}
+  animate={{ scale: 1, opacity: 1 }}
+  className="relative flex h-24 w-36 items-center justify-center rounded-[2rem] border border-amber-300/45 bg-slate-950/35 px-3 sm:h-28 sm:w-44 lg:h-44 lg:w-72 lg:rounded-[2.25rem]"
+>
+  <div className="absolute inset-4 rounded-[50%] border border-white/10" />
+
+  <div className="relative">
+    <p className="text-center text-xs uppercase tracking-[0.35em] text-slate-300 sm:text-sm">
+      Pile
+    </p>
+
+    <p className="mt-1 text-center text-xl font-black text-white sm:text-2xl lg:text-3xl">
+      {game.centerPileCount} cards
+    </p>
+  </div>
+</motion.div>
               <div className="mt-5 max-w-[17rem] px-3 text-center sm:max-w-[18rem]">
                 {game.currentRoundRank ? (
                   <p className="text-[11px] font-semibold text-sky-300 sm:text-xs lg:text-sm">Current Claim: {game.currentRoundRank}</p>
