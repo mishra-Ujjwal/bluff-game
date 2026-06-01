@@ -408,47 +408,56 @@ export default function GamePage() {
          
 
           <motion.section
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="table-felt relative h-[240px] shrink-0 overflow-hidden rounded-[2rem] border px-3 py-3 sm:h-[280px] sm:px-4 sm:py-4 lg:h-[360px] lg:px-5 lg:py-5 xl:h-[390px]"
-          >
-            {isMyTurn ? (
-              <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-sky-300/35 bg-sky-400/15 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-sky-200 shadow-[0_0_18px_rgba(56,189,248,0.22)]">
-                Your Turn
-              </div>
-            ) : null}
-            <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
-              <GameTimer remainingSeconds={timer.remainingSeconds} totalSeconds={timer.turnTimeLimit || 120} />
-            </div>
-
-            <div className="mx-auto mt-12 flex h-full max-w-xs flex-col items-center justify-center sm:max-w-sm lg:mt-8 lg:max-w-md">
-              
-             <motion.div
-  key={game.centerPileCount}
-  initial={{ scale: 0.95, opacity: 0.85 }}
-  animate={{ scale: 1, opacity: 1 }}
-  className="relative flex h-24 w-36 items-center justify-center rounded-[2rem] border border-amber-300/45 bg-slate-950/35 px-3 sm:h-28 sm:w-44 lg:h-44 lg:w-72 lg:rounded-[2.25rem]"
+  initial={{ opacity: 0, y: 18 }}
+  animate={{ opacity: 1, y: 0 }}
+  className="table-felt relative h-[300px] shrink-0 overflow-hidden rounded-[2rem] border px-3 py-3 sm:h-[330px] sm:px-4 sm:py-4 lg:h-[390px] lg:px-5 lg:py-5 xl:h-[420px]"
 >
-  <div className="absolute inset-4 rounded-[50%] border border-white/10" />
+  {isMyTurn ? (
+    <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-sky-300/35 bg-sky-400/15 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-sky-200 shadow-[0_0_18px_rgba(56,189,248,0.22)]">
+      Your Turn
+    </div>
+  ) : null}
 
-  <div className="relative">
-    <p className="text-center text-xs uppercase tracking-[0.35em] text-slate-300 sm:text-sm">
-      Pile
-    </p>
-
-    <p className="mt-1 text-center text-xl font-black text-white sm:text-2xl lg:text-3xl">
-      {game.centerPileCount} cards
-    </p>
+  <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
+    <GameTimer
+      remainingSeconds={timer.remainingSeconds}
+      totalSeconds={timer.turnTimeLimit || 120}
+    />
   </div>
-</motion.div>
-              <div className="mt-5 max-w-[17rem] px-3 text-center sm:max-w-[18rem]">
-                {game.currentRoundRank ? (
-                  <p className="text-[11px] font-semibold text-sky-300 sm:text-xs lg:text-sm">Current Claim: {game.currentRoundRank}</p>
-                ) : null}
-                <p className="mt-2 leading-5 text-[11px] text-slate-300 sm:text-xs lg:text-sm">{game.lastAction}</p>
-              </div>
-            </div>
-          </motion.section>
+
+  <div className="mx-auto flex h-full max-w-xs flex-col items-center justify-center pt-10 sm:max-w-sm lg:max-w-md lg:pt-6">
+    {game.currentRoundRank ? (
+      <p className="mb-4 rounded-full border border-sky-300/40 bg-sky-400/15 px-4 py-1.5 text-sm font-extrabold text-sky-200 sm:text-base lg:text-lg">
+        Current Claim: {game.currentRoundRank}
+      </p>
+    ) : null}
+
+    <motion.div
+      key={game.centerPileCount}
+      initial={{ scale: 0.95, opacity: 0.85 }}
+      animate={{ scale: 1, opacity: 1 }}
+      className="relative flex h-24 w-36 items-center justify-center rounded-[2rem] border border-amber-300/45 bg-slate-950/35 px-3 sm:h-28 sm:w-44 lg:h-44 lg:w-72 lg:rounded-[2.25rem]"
+    >
+      <div className="absolute inset-4 rounded-[50%] border border-white/10" />
+
+      <div className="relative">
+        <p className="text-center text-sm uppercase tracking-[0.35em] text-slate-300 sm:text-base">
+          Pile
+        </p>
+
+        <p className="mt-1 text-center text-2xl font-black text-white sm:text-3xl lg:text-4xl">
+          {game.centerPileCount} cards
+        </p>
+      </div>
+    </motion.div>
+
+    <div className="mt-4 w-full max-w-[20rem] px-2 text-center sm:max-w-[24rem] lg:max-w-[28rem]">
+      <p className="break-words text-sm font-semibold leading-6 text-slate-200 sm:text-base lg:text-lg">
+        {game.lastAction}
+      </p>
+    </div>
+  </div>
+</motion.section>
 
           <motion.section
             initial={{ opacity: 0, y: 18 }}
