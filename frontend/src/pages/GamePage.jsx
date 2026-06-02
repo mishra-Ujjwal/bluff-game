@@ -126,6 +126,8 @@ export default function GamePage() {
   const setClaimedRank = useGameStore((state) => state.setClaimedRank);
   const setTimer = useGameStore((state) => state.setTimer);
   const setReconnecting = useGameStore((state) => state.setReconnecting);
+  const resetGameState = useGameStore((state) => state.resetGameState);
+  const leaveRoom = useRoomStore((state) => state.leaveRoom);
   const [actionLoading, setActionLoading] = useState({});
   const [showChat, setShowChat] = useState(false);
   const [bluffModalOpen, setBluffModalOpen] = useState(false);
@@ -136,11 +138,16 @@ export default function GamePage() {
   const timeoutToastShownRef = useRef(false);
   const swipeStartRef = useRef(null);
   const allowExitRef = useRef(false);
+  const showChatRef = useRef(false);
+
+  useEffect(() => {
+    showChatRef.current = showChat;
+  }, [showChat]);
 
   useEffect(() => {
     const socket = getSocket();
     setReconnecting(socket ? !socket.connected : false);
-    resetChat();
+    resetGameState();
 
     fetchRoom(roomCode)
       .then((room) => {
@@ -159,59 +166,86 @@ export default function GamePage() {
       });
 
     const onGameUpdated = (payload) => {
-      if (payload?.players) {
-        setGame(payload);
-        setTimer({
-          remainingSeconds: payload.remainingTurnSeconds,
-          currentPlayerId: payload.currentPlayerId,
-          turnTimeLimit: payload.turnTimeLimit,
-        });
-        if (payload.bluffReveal) {
-          const revealKey = `${payload.bluffReveal.playerId}-${payload.bluffReveal.callerId}-${payload.bluffReveal.actualCards.length}`;
-          if (lastRevealKeyRef.current !== revealKey) {
-            lastRevealKeyRef.current = revealKey;
-            setBluffModalOpen(true);
-          }
+      if (!payload?.players || payload.roomCode !== roomCode) {
+        return;
+      }
+
+      setGame(payload);
+      setTimer({
+        remainingSeconds: payload.remainingTurnSeconds,
+        currentPlayerId: payload.currentPlayerId,
+        turnTimeLimit: payload.turnTimeLimit,
+      });
+      if (payload.bluffReveal) {
+        const revealKey = `${payload.bluffReveal.playerId}-${payload.bluffReveal.callerId}-${payload.bluffReveal.actualCards.length}`;
+        if (lastRevealKeyRef.current !== revealKey) {
+          lastRevealKeyRef.current = revealKey;
+          setBluffModalOpen(true);
         }
       }
     };
 
     const onReceiveMessage = (payload) => {
+      if (!payload || payload.roomCode !== roomCode) {
+        return;
+      }
+
       addChat(payload);
-      if (!showChat && payload?.userId !== user?.id) {
+      if (!showChatRef.current && payload?.userId !== user?.id) {
         setUnreadChatCount((count) => count + 1);
       }
     };
 
     const onTimerUpdate = (payload) => {
+      if (!payload || payload.roomCode !== roomCode) {
+        return;
+      }
+
       setTimer(payload);
     };
 
     const onRoundEvent = (payload) => {
+      if (!payload || payload.roomCode !== roomCode) {
+        return;
+      }
+
       if (payload?.message) {
         toast(payload.message);
       }
     };
 
-    const onClearChat = () => {
+    const onClearChat = (payload) => {
+      if (payload?.roomCode && payload.roomCode !== roomCode) {
+        return;
+      }
+
       resetChat();
       setUnreadChatCount(0);
     };
 
-    const onRemoved = ({ message }) => {
+    const onRemoved = ({ roomCode: removedRoomCode, message }) => {
+      if (removedRoomCode !== roomCode) {
+        return;
+      }
+
       allowExitRef.current = true;
+      resetGameState();
       toast.error(message || "You were removed from the room.");
       navigate("/");
     };
 
-    const onWinner = ({ winnerId }) => {
+    const onWinner = ({ roomCode: winnerRoomCode, winnerId }) => {
+      if (winnerRoomCode !== roomCode) {
+        return;
+      }
+
       if (lastWinnerRef.current === winnerId) {
         return;
       }
 
       lastWinnerRef.current = winnerId;
       setWinnerOpen(true);
-      const winner = game?.players?.find((player) => player.userId === winnerId);
+      const winner = useGameStore.getState().game?.players?.find((player) => player.userId === winnerId);
       toast.success(`${winner?.username || "A player"} wins the match!`);
     };
 
@@ -249,8 +283,9 @@ export default function GamePage() {
       socket?.off("error-message", onSocketError);
       socket?.off("disconnect", onDisconnect);
       socket?.off("connect", onConnect);
+      resetGameState();
     };
-  }, [addChat, fetchRoom, game?.players, navigate, resetChat, roomCode, setGame, setReconnecting, setTimer, showChat, user?.id]);
+  }, [addChat, fetchRoom, navigate, resetChat, resetGameState, roomCode, setGame, setReconnecting, setTimer, user?.id]);
 
   useEffect(() => {
     if (showChat) {
@@ -287,19 +322,7 @@ export default function GamePage() {
     };
   }, []);
 
-  useEffect(() => {
-    const displayedRemainingSeconds = timer.currentPlayerId === game?.currentPlayerId ? timer.remainingSeconds : 0;
-    if (displayedRemainingSeconds <= 0 && !timeoutToastShownRef.current) {
-      timeoutToastShownRef.current = true;
-      toast.error("Time over! Auto pass.");
-    }
-
-    if (displayedRemainingSeconds > 0) {
-      timeoutToastShownRef.current = false;
-    }
-  }, [game?.currentPlayerId, timer.currentPlayerId, timer.remainingSeconds]);
-
-  const topPlayers = game ? game.players.filter((player) => player.userId !== user?.id) : [];
+  const topPlayers = game ? game.players.filter((player) => player.userId !== user?.id && player.connected) : [];
 
   if (!game) {
     return <FullPageLoader label="Reconnecting to the match..." />;
@@ -318,6 +341,30 @@ export default function GamePage() {
   const winner = game.players.find((player) => player.userId === game.winnerId);
   const handDisabled = !canPlay || !!game.winnerId || controlsLockedForWinnerAcceptance;
   const displayedRemainingSeconds = timer.currentPlayerId === game.currentPlayerId ? timer.remainingSeconds : 0;
+
+  const handleLeaveRoom = () => {
+    if (!window.confirm("Are you sure you want to leave this game table?")) {
+      return;
+    }
+
+    allowExitRef.current = true;
+    getSocket()?.emit("leave-room", { roomCode }, async (response) => {
+      if (!response?.ok) {
+        toast.error(response?.message || "Unable to leave room.");
+        allowExitRef.current = false;
+        return;
+      }
+
+      try {
+        await leaveRoom(roomCode);
+      } catch (_error) {
+        // Socket cleanup already completed.
+      }
+
+      resetGameState();
+      navigate("/");
+    });
+  };
 
   const runAction = (key, emitter) => {
     setActionLoading((current) => ({ ...current, [key]: true }));
@@ -368,12 +415,7 @@ export default function GamePage() {
         <div className="flex items-start justify-between gap-3 lg:hidden">
           <button
             className="action-button-secondary gap-2 border border-red-400/20 text-red-200"
-            onClick={() => {
-              if (window.confirm("Are you sure you want to leave this game table?")) {
-                allowExitRef.current = true;
-                navigate("/");
-              }
-            }}
+            onClick={handleLeaveRoom}
           >
             <DoorOpen size={16} />
             Exit
@@ -416,12 +458,7 @@ export default function GamePage() {
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <button
               className="action-button-secondary gap-2 border border-red-400/20 text-red-200"
-              onClick={() => {
-                if (window.confirm("Are you sure you want to leave this game table?")) {
-                  allowExitRef.current = true;
-                  navigate("/");
-                }
-              }}
+              onClick={handleLeaveRoom}
             >
               <DoorOpen size={16} />
               Exit
@@ -476,7 +513,7 @@ export default function GamePage() {
   <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
     <GameTimer
       remainingSeconds={displayedRemainingSeconds}
-      totalSeconds={timer.turnTimeLimit || 120}
+      totalSeconds={timer.turnTimeLimit || 60}
     />
   </div>
 

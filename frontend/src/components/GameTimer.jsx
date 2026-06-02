@@ -17,8 +17,8 @@ const formatTime = (seconds) => {
   return `${mins}:${secs}`;
 };
 
-export default function GameTimer({ remainingSeconds = 120, totalSeconds = 120 }) {
-  const safeTotalSeconds = Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : 120;
+export default function GameTimer({ remainingSeconds = 60, totalSeconds = 60 }) {
+  const safeTotalSeconds = Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : 60;
   const safeRemainingSeconds = Number.isFinite(remainingSeconds)
     ? Math.min(safeTotalSeconds, Math.max(0, Math.floor(remainingSeconds)))
     : safeTotalSeconds;

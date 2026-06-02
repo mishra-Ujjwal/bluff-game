@@ -8,7 +8,7 @@ export const useGameStore = create((set) => ({
   stats: null,
   selectedCards: [],
   claimedRank: "A",
-  timer: { remainingSeconds: 120, currentPlayerId: null, turnTimeLimit: 120 },
+  timer: { remainingSeconds: 60, currentPlayerId: null, turnTimeLimit: 60 },
   reconnecting: false,
   setGame(game) {
     set({ game });
@@ -16,9 +16,9 @@ export const useGameStore = create((set) => ({
   setTimer(timer) {
     set((state) => ({
       timer: {
-        remainingSeconds: 120,
+        remainingSeconds: 60,
         currentPlayerId: null,
-        turnTimeLimit: 120,
+        turnTimeLimit: 60,
         ...state.timer,
         ...timer,
       },
@@ -45,6 +45,16 @@ export const useGameStore = create((set) => ({
   },
   setClaimedRank(claimedRank) {
     set({ claimedRank });
+  },
+  resetGameState() {
+    set({
+      game: null,
+      chat: [],
+      selectedCards: [],
+      claimedRank: "A",
+      timer: { remainingSeconds: 60, currentPlayerId: null, turnTimeLimit: 60 },
+      reconnecting: false,
+    });
   },
   async fetchHistory() {
     const { data } = await api.get("/game/history");

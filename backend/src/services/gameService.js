@@ -3,7 +3,7 @@ import { distributeCards, RANKS } from "../utils/cards.js";
 import { AppError } from "../utils/errors.js";
 import { prisma } from "../utils/prisma.js";
 
-const TURN_TIME_LIMIT = 120;
+const TURN_TIME_LIMIT = 60;
 const MAX_WINNERS = 3;
 
 const sortHand = (hand) => hand.sort((left, right) => RANKS.indexOf(left.rank) - RANKS.indexOf(right.rank));
@@ -147,6 +147,14 @@ const updateTurn = (state, nextPlayerId) => {
   state.currentPlayerId = nextPlayerId;
   state.currentTurnUserId = nextPlayerId;
   state.turnStartedAt = new Date().toISOString();
+};
+
+const syncHostAcrossState = (state, nextHostId) => {
+  state.hostId = nextHostId;
+  state.players = state.players.map((player) => ({
+    ...player,
+    isHost: player.userId === nextHostId,
+  }));
 };
 
 const getPlayerOrThrow = (state, userId) => {
@@ -620,6 +628,122 @@ export const markPlayerConnection = async (roomCode, userId, connected) => {
   player.connected = connected;
   await updatePersistentGame(roomCode, state);
   return cloneState(state);
+};
+
+export const removePlayerFromRoom = async ({ roomCode, userId, reason = "left" }) => {
+  const room = await prisma.room.findUnique({
+    where: { roomCode },
+    include: {
+      players: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+            },
+          },
+        },
+        orderBy: { joinedAt: "asc" },
+      },
+      activeGame: true,
+    },
+  });
+
+  if (!room) {
+    return { roomClosed: true, state: null, removedPlayerId: userId, roomStatus: null };
+  }
+
+  const membership = room.players.find((player) => player.userId === userId);
+  if (!membership) {
+    return { roomClosed: false, state: room.activeGame?.state ? await loadActiveGame(roomCode) : null, removedPlayerId: userId, roomStatus: room.status };
+  }
+
+  const remainingMembers = room.players.filter((player) => player.userId !== userId);
+  const nextHostId = room.hostId === userId ? remainingMembers[0]?.userId || null : room.hostId;
+
+  await prisma.player.deleteMany({
+    where: { roomId: room.id, userId },
+  });
+
+  if (!remainingMembers.length) {
+    activeGames.delete(roomCode);
+    await prisma.room.delete({ where: { id: room.id } });
+    return { roomClosed: true, state: null, removedPlayerId: userId, roomStatus: room.status };
+  }
+
+  await prisma.room.update({
+    where: { id: room.id },
+    data: { hostId: nextHostId || room.hostId },
+  });
+
+  if (!room.activeGame?.state) {
+    return { roomClosed: false, state: null, removedPlayerId: userId, roomStatus: room.status };
+  }
+
+  const state = await loadActiveGame(roomCode);
+  if (!state) {
+    return { roomClosed: false, state: null, removedPlayerId: userId, roomStatus: room.status };
+  }
+
+  const removedPlayer = state.players.find((player) => player.userId === userId);
+  if (!removedPlayer) {
+    return { roomClosed: false, state: cloneState(state), removedPlayerId: userId, roomStatus: room.status };
+  }
+
+  const nextActivePlayerId = getNextActivePlayerId(state, userId);
+  state.players = state.players.filter((player) => player.userId !== userId);
+  state.removedPlayerIds = [...new Set([...(state.removedPlayerIds || []), userId])];
+  syncHostAcrossState(state, nextHostId || state.hostId);
+
+  state.centerPile = state.centerPile.filter((entry) => entry.playerId !== userId);
+  if (state.lastPlayedBy === userId) {
+    state.lastPlayedBy = null;
+    state.lastPlayedCards = [];
+    state.lastPlayedClaimCount = 0;
+  }
+
+  if (!state.centerPile.length) {
+    state.currentRoundRank = null;
+  }
+
+  if (state.pendingWinnerId === userId) {
+    state.pendingWinnerId = null;
+  }
+
+  if (state.roundStarterPlayerId === userId) {
+    state.roundStarterPlayerId = nextActivePlayerId;
+  }
+
+  if (state.currentPlayerId === userId) {
+    updateTurn(state, nextActivePlayerId);
+  }
+
+  const activePlayers = getActivePlayers(state);
+  const removalLabel = reason === "offline" ? "went offline and was removed from the room." : "left the room.";
+
+  if (activePlayers.length <= 1) {
+    const survivor = activePlayers[0] || state.players[0];
+    if (survivor) {
+      setWinner(state, survivor.userId, `${removedPlayer.username} ${removalLabel} ${survivor.username} wins by default.`);
+    }
+  } else {
+    state.recentRoundEvent = {
+      type: "player-left",
+      message: `${removedPlayer.username} ${removalLabel}`,
+      at: new Date().toISOString(),
+      removedPlayerId: userId,
+      nextPlayerId: state.currentPlayerId,
+    };
+    state.lastAction = `${removedPlayer.username} ${removalLabel}`;
+  }
+
+  await updatePersistentGame(roomCode, state);
+  return {
+    roomClosed: false,
+    state: cloneState(state),
+    removedPlayerId: userId,
+    roomStatus: room.status,
+  };
 };
 
 export { TURN_TIME_LIMIT, getRemainingSeconds };

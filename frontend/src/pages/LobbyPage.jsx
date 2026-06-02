@@ -16,6 +16,7 @@ export default function LobbyPage() {
   const room = useRoomStore((state) => state.room);
   const setRoom = useRoomStore((state) => state.setRoom);
   const fetchRoom = useRoomStore((state) => state.fetchRoom);
+  const leaveRoom = useRoomStore((state) => state.leaveRoom);
   const [starting, setStarting] = useState(false);
   const allowExitRef = useRef(false);
 
@@ -25,8 +26,12 @@ export default function LobbyPage() {
     fetchRoom(roomCode).catch(() => toast.error("Unable to load room."));
     socket?.emit("join-room", { roomCode });
 
-    const onPlayers = (players) => {
-      setRoom((currentRoom) => ({ ...currentRoom, players }));
+    const onPlayers = (payload) => {
+      if (!payload || payload.roomCode !== roomCode) {
+        return;
+      }
+
+      setRoom((currentRoom) => ({ ...currentRoom, players: payload.players, hostId: payload.hostId ?? currentRoom?.hostId }));
     };
 
     const onStarted = () => navigate(`/game/${roomCode}`);
@@ -108,7 +113,21 @@ export default function LobbyPage() {
                 className="action-button-secondary gap-2 border border-red-400/20 px-3 py-2 text-sm text-red-200"
                 onClick={() => {
                   allowExitRef.current = true;
-                  navigate("/");
+                  getSocket()?.emit("leave-room", { roomCode }, async (response) => {
+                    if (!response?.ok) {
+                      toast.error(response?.message || "Unable to leave room.");
+                      allowExitRef.current = false;
+                      return;
+                    }
+
+                    try {
+                      await leaveRoom(roomCode);
+                    } catch (_error) {
+                      // Socket cleanup already handled the actual exit.
+                    }
+
+                    navigate("/");
+                  });
                 }}
               >
                 <DoorOpen size={16} />

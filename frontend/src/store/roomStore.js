@@ -22,6 +22,12 @@ export const useRoomStore = create((set) => ({
     set({ room: data.room, loading: false });
     return data.room;
   },
+  async leaveRoom(roomCode) {
+    set({ loading: true });
+    const { data } = await api.post("/rooms/leave", { roomCode });
+    set({ room: null, loading: false });
+    return data;
+  },
   setRoom(room) {
     set((state) => ({ room: typeof room === "function" ? room(state.room) : room }));
   },

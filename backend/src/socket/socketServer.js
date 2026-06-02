@@ -8,6 +8,7 @@ import {
   markPlayerConnection,
   passTurn,
   playCards,
+  removePlayerFromRoom,
   serializeStateForUser,
 } from "../services/gameService.js";
 
@@ -44,16 +45,17 @@ const emitLobbySnapshot = async (io, roomCode) => {
     return;
   }
 
-  io.to(roomCode).emit(
-    "player-joined",
-    room.players.map((player) => ({
+  io.to(roomCode).emit("player-joined", {
+    roomCode,
+    players: room.players.map((player) => ({
       userId: player.user.id,
       username: player.user.username,
       cardsCount: player.cardsCount,
       isHost: player.user.id === room.hostId,
       connected: true,
     })),
-  );
+    hostId: room.hostId,
+  });
 };
 
 const getSocketUser = (socket) => socket.data.user;
@@ -91,7 +93,10 @@ const emitRoundEvents = (io, roomCode, state) => {
     });
   }
 
-  io.to(roomCode).emit(state.recentRoundEvent.type, state.recentRoundEvent);
+  io.to(roomCode).emit(state.recentRoundEvent.type, {
+    ...state.recentRoundEvent,
+    roomCode,
+  });
 };
 
 const clearTurnMonitor = (roomCode) => {
@@ -128,11 +133,6 @@ const scheduleTurnMonitor = (io, roomCode) => {
         roomCode,
         userId: state.currentPlayerId,
         reason: "timeout",
-      });
-      io.to(roomCode).emit("auto-pass-timeout", {
-        roomCode,
-        playerId: state.currentPlayerId,
-        message: `${state.players.find((player) => player.userId === state.currentPlayerId)?.username || "Player"} timed out.`,
       });
       emitRoundEvents(io, roomCode, nextState);
       emitRoomSnapshot(io, nextState);
@@ -211,6 +211,45 @@ export const configureSocket = (io) => {
         await emitLobbySnapshot(io, roomCode);
       } catch (_error) {
         socket.emit("error-message", { message: "Unauthorized room access." });
+      }
+    });
+
+    socket.on("leave-room", async ({ roomCode }, callback) => {
+      try {
+        const normalizedRoomCode = roomCode?.trim();
+        if (!normalizedRoomCode) {
+          throw new Error("Room code is required.");
+        }
+
+        const result = await removePlayerFromRoom({
+          roomCode: normalizedRoomCode,
+          userId: user.userId,
+          reason: "left",
+        });
+
+        io.in(user.userId).socketsLeave(normalizedRoomCode);
+        socket.leave(normalizedRoomCode);
+
+        if (!result.roomClosed) {
+          await emitLobbySnapshot(io, normalizedRoomCode);
+          if (result.state) {
+            emitRoomSnapshot(io, result.state);
+            emitTimerSnapshot(io, normalizedRoomCode, result.state);
+            emitRoundEvents(io, normalizedRoomCode, result.state);
+            emitWinnerIfNeeded(io, normalizedRoomCode, result.state);
+            if (result.state.winnerId) {
+              clearTurnMonitor(normalizedRoomCode);
+            } else {
+              scheduleTurnMonitor(io, normalizedRoomCode);
+            }
+          }
+        } else {
+          clearTurnMonitor(normalizedRoomCode);
+        }
+
+        callback?.({ ok: true });
+      } catch (error) {
+        callback?.({ ok: false, message: error.message });
       }
     });
 
@@ -374,6 +413,7 @@ export const configureSocket = (io) => {
 
         io.to(roomCode).emit("receive-message", {
           id: crypto.randomUUID(),
+          roomCode,
           userId: user.userId,
           username: user.username,
           message: message.trim(),
@@ -393,10 +433,27 @@ export const configureSocket = (io) => {
       });
 
       for (const membership of disconnectMemberships) {
-        await markPlayerConnection(membership.room.roomCode, user.userId, false);
-        const state = await loadActiveGame(membership.room.roomCode);
-        if (state) {
-          emitRoomSnapshot(io, state);
+        const result = await removePlayerFromRoom({
+          roomCode: membership.room.roomCode,
+          userId: user.userId,
+          reason: "offline",
+        });
+
+        if (!result.roomClosed) {
+          await emitLobbySnapshot(io, membership.room.roomCode);
+          if (result.state) {
+            emitRoomSnapshot(io, result.state);
+            emitTimerSnapshot(io, membership.room.roomCode, result.state);
+            emitRoundEvents(io, membership.room.roomCode, result.state);
+            emitWinnerIfNeeded(io, membership.room.roomCode, result.state);
+            if (result.state.winnerId) {
+              clearTurnMonitor(membership.room.roomCode);
+            } else {
+              scheduleTurnMonitor(io, membership.room.roomCode);
+            }
+          }
+        } else {
+          clearTurnMonitor(membership.room.roomCode);
         }
       }
     });

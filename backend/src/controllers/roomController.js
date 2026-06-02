@@ -15,6 +15,10 @@ const joinRoomSchema = z.object({
   roomCode: z.string().trim().regex(/^\d{4,12}$/),
 });
 
+const leaveRoomSchema = z.object({
+  roomCode: z.string().trim().regex(/^\d{4,12}$/),
+});
+
 const buildRoomResponse = (room, viewerId) => ({
   id: room.id,
   name: room.name,
@@ -136,6 +140,54 @@ export const getRoomByCode = async (req, res, next) => {
     }
 
     res.json({ room: buildRoomResponse(room, req.user.id) });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const leaveRoom = async (req, res, next) => {
+  try {
+    const data = leaveRoomSchema.parse(req.body);
+    const room = await prisma.room.findUnique({
+      where: { roomCode: data.roomCode.trim() },
+      include: {
+        players: {
+          include: { user: { select: { id: true, username: true } } },
+          orderBy: { joinedAt: "asc" },
+        },
+        activeGame: true,
+      },
+    });
+
+    if (!room) {
+      throw new AppError("Room not found.", 404);
+    }
+
+    const membership = room.players.find((player) => player.userId === req.user.id);
+    if (!membership) {
+      return res.json({ ok: true });
+    }
+
+    await prisma.player.deleteMany({
+      where: { roomId: room.id, userId: req.user.id },
+    });
+
+    const remainingPlayers = room.players.filter((player) => player.userId !== req.user.id);
+    const nextHostId = room.hostId === req.user.id ? remainingPlayers[0]?.userId || null : room.hostId;
+
+    if (!remainingPlayers.length) {
+      await prisma.room.delete({ where: { id: room.id } });
+      return res.json({ ok: true });
+    }
+
+    await prisma.room.update({
+      where: { id: room.id },
+      data: {
+        hostId: nextHostId || room.hostId,
+      },
+    });
+
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
