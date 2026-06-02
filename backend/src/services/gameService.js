@@ -4,6 +4,7 @@ import { AppError } from "../utils/errors.js";
 import { prisma } from "../utils/prisma.js";
 
 const TURN_TIME_LIMIT = 120;
+const MAX_WINNERS = 3;
 
 const sortHand = (hand) => hand.sort((left, right) => RANKS.indexOf(left.rank) - RANKS.indexOf(right.rank));
 
@@ -44,9 +45,13 @@ const normalizeState = (state) => {
   state.turnStartedAt = state.turnStartedAt || new Date().toISOString();
   state.turnTimeLimit = state.turnTimeLimit || TURN_TIME_LIMIT;
   state.deckCount = state.deckCount || 1;
+  state.initialPlayerCount = state.initialPlayerCount || state.players.length;
+  state.targetWinnerCount = state.targetWinnerCount || Math.max(1, Math.min(MAX_WINNERS, state.initialPlayerCount - 1));
+  state.winners = state.winners || [];
   state.pendingWinnerId = state.pendingWinnerId ?? null;
   state.bluffReveal = state.bluffReveal ?? null;
   state.recentRoundEvent = state.recentRoundEvent ?? null;
+  state.removedPlayerIds = state.removedPlayerIds || [];
   state.lastAction = state.lastAction || "Round restored.";
   state.startedAt = state.startedAt || new Date().toISOString();
 
@@ -92,6 +97,8 @@ export const serializeStateForUser = (state, viewerId) => ({
   turnStartedAt: state.turnStartedAt,
   turnTimeLimit: state.turnTimeLimit,
   deckCount: state.deckCount || 1,
+  winners: state.winners || [],
+  targetWinnerCount: state.targetWinnerCount || Math.max(1, Math.min(MAX_WINNERS, state.initialPlayerCount - 1)),
   remainingTurnSeconds: getRemainingSeconds(state),
   players: state.players.map((player) => sanitizePlayerForViewer(player, viewerId)),
   me: state.players.find((player) => player.userId === viewerId)
@@ -183,13 +190,59 @@ const setWinner = (state, winnerId, message) => {
   };
 };
 
+const finalizeWinningPlayer = (state, winnerId, nextStarterId, message) => {
+  const winner = getPlayerOrThrow(state, winnerId);
+  if (!state.winners.some((entry) => entry.userId === winner.userId)) {
+    state.winners.push({
+      userId: winner.userId,
+      username: winner.username,
+      finishedAt: new Date().toISOString(),
+      place: state.winners.length + 1,
+    });
+  }
+
+  state.removedPlayerIds = [...new Set([...(state.removedPlayerIds || []), winner.userId])];
+  state.players = state.players.filter((player) => player.userId !== winner.userId);
+  state.discardPile.push(...state.centerPile);
+  state.centerPile = [];
+  state.currentRoundRank = null;
+  state.lastPlayedBy = null;
+  state.lastPlayedCards = [];
+  state.lastPlayedClaimCount = 0;
+  state.consecutivePasses = 0;
+  state.pendingWinnerId = null;
+  state.bluffReveal = null;
+
+  if (state.winners.length >= state.targetWinnerCount || getActivePlayers(state).length <= 1) {
+    setWinner(state, winner.userId, `${winner.username} secured a winning spot and the match is complete.`);
+    return;
+  }
+
+  state.roundStarterPlayerId = nextStarterId;
+  state.recentRoundEvent = {
+    type: "player-finished",
+    message,
+    at: new Date().toISOString(),
+    winnerId: winner.userId,
+    nextStarterId,
+    removedPlayerId: winner.userId,
+  };
+  state.lastAction = message;
+  updateTurn(state, nextStarterId);
+};
+
 const resolveAcceptedPendingWinner = (state, actorId) => {
   if (!state.pendingWinnerId || state.pendingWinnerId === actorId) {
     return false;
   }
 
   const winner = getPlayerOrThrow(state, state.pendingWinnerId);
-  setWinner(state, winner.userId, `${winner.username} wins the match.`);
+  finalizeWinningPlayer(
+    state,
+    winner.userId,
+    actorId,
+    `${winner.username} finished their hand, leaves the table, and ${getPlayerOrThrow(state, actorId).username} starts the next round.`,
+  );
   return true;
 };
 
@@ -273,6 +326,10 @@ export const createGameForRoom = async (room) => {
     turnStartedAt: new Date().toISOString(),
     turnTimeLimit: TURN_TIME_LIMIT,
     deckCount: room.deckCount || 1,
+    initialPlayerCount: room.players.length,
+    targetWinnerCount: Math.max(1, Math.min(MAX_WINNERS, room.players.length - 1)),
+    winners: [],
+    removedPlayerIds: [],
     lastAction: `${room.players[0].user.username} starts a new round.`,
     winnerId: null,
     pendingWinnerId: null,
@@ -536,7 +593,12 @@ export const callBluff = async ({ roomCode, callerId }) => {
   };
 
   if (!liar && lastPlayer.hand.length === 0) {
-    setWinner(state, lastPlayer.userId, `${lastPlayer.username} wins the match.`);
+    finalizeWinningPlayer(
+      state,
+      lastPlayer.userId,
+      caller.userId,
+      `${lastPlayer.username} finished their hand, leaves the table, and ${caller.username} starts the next round.`,
+    );
   }
 
   await updatePersistentGame(roomCode, state);

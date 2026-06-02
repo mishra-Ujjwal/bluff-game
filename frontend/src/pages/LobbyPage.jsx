@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Copy, LoaderCircle, Sparkles } from "lucide-react";
+import { Copy, DoorOpen, LoaderCircle, Sparkles, UserMinus } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import FullPageLoader from "../components/FullPageLoader";
@@ -17,6 +17,7 @@ export default function LobbyPage() {
   const setRoom = useRoomStore((state) => state.setRoom);
   const fetchRoom = useRoomStore((state) => state.fetchRoom);
   const [starting, setStarting] = useState(false);
+  const allowExitRef = useRef(false);
 
   useEffect(() => {
     const socket = getSocket();
@@ -26,19 +27,54 @@ export default function LobbyPage() {
 
     const onPlayers = (players) => {
       setRoom((currentRoom) => ({ ...currentRoom, players }));
-      toast.success("Player joined the lobby.");
     };
 
     const onStarted = () => navigate(`/game/${roomCode}`);
+    const onRemoved = ({ message }) => {
+      allowExitRef.current = true;
+      toast.error(message || "You were removed from the room.");
+      navigate("/");
+    };
 
     socket?.on("player-joined", onPlayers);
     socket?.on("start-game", onStarted);
+    socket?.on("removed-from-room", onRemoved);
 
     return () => {
       socket?.off("player-joined", onPlayers);
       socket?.off("start-game", onStarted);
+      socket?.off("removed-from-room", onRemoved);
     };
   }, [fetchRoom, navigate, roomCode, setRoom]);
+
+  useEffect(() => {
+    const preventUnload = (event) => {
+      if (allowExitRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const handlePopState = () => {
+      if (allowExitRef.current) {
+        return;
+      }
+
+      window.history.pushState(null, "", window.location.href);
+      toast.error("Use the Exit button to leave the room.");
+    };
+
+    window.history.pushState(null, "", window.location.href);
+    window.addEventListener("beforeunload", preventUnload);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("beforeunload", preventUnload);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
 
   if (!room) {
     return <FullPageLoader label="Loading lobby..." />;
@@ -57,16 +93,28 @@ export default function LobbyPage() {
           <p className="text-xs uppercase tracking-[0.32em] text-sky-300 sm:text-sm sm:tracking-[0.35em]">Room Code</p>
           <div className="mt-3 flex items-center justify-between gap-3 sm:mt-4">
             <h1 className="text-4xl font-black uppercase tracking-[0.12em] text-white sm:text-5xl sm:tracking-[0.15em]">{room.roomCode}</h1>
-            <button
-              className="action-button-secondary gap-2 px-3 py-2 text-sm"
-              onClick={async () => {
-                await navigator.clipboard.writeText(room.roomCode);
-                toast.success("Room code copied.");
-              }}
-            >
-              <Copy size={16} />
-              Copy
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                className="action-button-secondary gap-2 px-3 py-2 text-sm"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(room.roomCode);
+                  toast.success("Room code copied.");
+                }}
+              >
+                <Copy size={16} />
+                Copy
+              </button>
+              <button
+                className="action-button-secondary gap-2 border border-red-400/20 px-3 py-2 text-sm text-red-200"
+                onClick={() => {
+                  allowExitRef.current = true;
+                  navigate("/");
+                }}
+              >
+                <DoorOpen size={16} />
+                Exit
+              </button>
+            </div>
           </div>
           <p className="mt-3 text-base text-slate-300 sm:mt-4 sm:text-lg">{room.name}</p>
           <div className="mt-5 rounded-[1.35rem] border border-white/10 bg-white/5 p-4 sm:mt-8 sm:rounded-[1.75rem] sm:p-5">
@@ -126,7 +174,28 @@ export default function LobbyPage() {
 
           <div className="scrollbar-thin mt-5 grid min-h-0 flex-1 gap-3 overflow-y-auto pr-1 sm:mt-6 sm:gap-4">
             {room.players.map((player) => (
-              <PlayerBadge key={player.userId} player={{ ...player, connected: true }} isMe={player.userId === user?.id} />
+              <div key={player.userId} className="relative">
+                <PlayerBadge player={{ ...player, connected: true }} isMe={player.userId === user?.id} />
+                {isHost && player.userId !== user?.id ? (
+                  <button
+                    className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-red-400/20 bg-slate-950/80 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-950/70"
+                    onClick={() => {
+                      getSocket()?.emit("remove-player", { roomCode, targetUserId: player.userId }, async (response) => {
+                        if (!response?.ok) {
+                          toast.error(response?.message || "Unable to remove player.");
+                          return;
+                        }
+
+                        await fetchRoom(roomCode);
+                        toast.success(`${player.username} removed from room.`);
+                      });
+                    }}
+                  >
+                    <UserMinus size={14} />
+                    Remove
+                  </button>
+                ) : null}
+              </div>
             ))}
           </div>
         </motion.section>

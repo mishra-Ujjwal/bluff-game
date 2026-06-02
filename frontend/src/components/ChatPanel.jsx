@@ -24,7 +24,12 @@ export default function ChatPanel({ messages, onSend, sending }) {
         className="mt-4 flex gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          onSend(message);
+          const nextMessage = message.trim();
+          if (!nextMessage) {
+            return;
+          }
+
+          onSend(nextMessage);
           setMessage("");
         }}
       >

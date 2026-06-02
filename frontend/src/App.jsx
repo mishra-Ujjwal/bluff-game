@@ -20,7 +20,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-night bg-grid">
-      {!location.pathname.startsWith("/game/") ? <Navbar /> : null}
+      {!location.pathname.startsWith("/game/") && !location.pathname.startsWith("/lobby/") ? <Navbar /> : null}
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />

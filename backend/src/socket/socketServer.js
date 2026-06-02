@@ -83,6 +83,14 @@ const emitRoundEvents = (io, roomCode, state) => {
     return;
   }
 
+  if (state.recentRoundEvent.removedPlayerId) {
+    io.in(state.recentRoundEvent.removedPlayerId).socketsLeave(roomCode);
+    io.to(state.recentRoundEvent.removedPlayerId).emit("removed-from-room", {
+      roomCode,
+      message: state.recentRoundEvent.message,
+    });
+  }
+
   io.to(roomCode).emit(state.recentRoundEvent.type, state.recentRoundEvent);
 };
 
@@ -203,6 +211,45 @@ export const configureSocket = (io) => {
         await emitLobbySnapshot(io, roomCode);
       } catch (_error) {
         socket.emit("error-message", { message: "Unauthorized room access." });
+      }
+    });
+
+    socket.on("remove-player", async ({ roomCode, targetUserId }, callback) => {
+      try {
+        const normalizedRoomCode = roomCode?.trim();
+        const room = await prisma.room.findUnique({
+          where: { roomCode: normalizedRoomCode },
+          include: { players: true },
+        });
+
+        if (!room || room.hostId !== user.userId) {
+          throw new Error("Only the host can remove players.");
+        }
+
+        if (room.status !== "WAITING") {
+          throw new Error("Players can only be removed before the game starts.");
+        }
+
+        if (!targetUserId || targetUserId === room.hostId) {
+          throw new Error("Invalid player removal request.");
+        }
+
+        await prisma.player.deleteMany({
+          where: {
+            roomId: room.id,
+            userId: targetUserId,
+          },
+        });
+
+        io.in(targetUserId).socketsLeave(normalizedRoomCode);
+        io.to(targetUserId).emit("removed-from-room", {
+          roomCode: normalizedRoomCode,
+          message: "The host removed you from the room.",
+        });
+        await emitLobbySnapshot(io, normalizedRoomCode);
+        callback?.({ ok: true });
+      } catch (error) {
+        callback?.({ ok: false, message: error.message });
       }
     });
 

@@ -130,10 +130,12 @@ export default function GamePage() {
   const [showChat, setShowChat] = useState(false);
   const [bluffModalOpen, setBluffModalOpen] = useState(false);
   const [winnerOpen, setWinnerOpen] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
   const lastRevealKeyRef = useRef(null);
   const lastWinnerRef = useRef(null);
   const timeoutToastShownRef = useRef(false);
   const swipeStartRef = useRef(null);
+  const allowExitRef = useRef(false);
 
   useEffect(() => {
     const socket = getSocket();
@@ -174,6 +176,13 @@ export default function GamePage() {
       }
     };
 
+    const onReceiveMessage = (payload) => {
+      addChat(payload);
+      if (!showChat && payload?.userId !== user?.id) {
+        setUnreadChatCount((count) => count + 1);
+      }
+    };
+
     const onTimerUpdate = (payload) => {
       setTimer(payload);
     };
@@ -186,6 +195,13 @@ export default function GamePage() {
 
     const onClearChat = () => {
       resetChat();
+      setUnreadChatCount(0);
+    };
+
+    const onRemoved = ({ message }) => {
+      allowExitRef.current = true;
+      toast.error(message || "You were removed from the room.");
+      navigate("/");
     };
 
     const onWinner = ({ winnerId }) => {
@@ -204,7 +220,7 @@ export default function GamePage() {
     const onConnect = () => setReconnecting(false);
 
     socket?.on("game-updated", onGameUpdated);
-    socket?.on("receive-message", addChat);
+    socket?.on("receive-message", onReceiveMessage);
     socket?.on("winner", onWinner);
     socket?.on("timer-update", onTimerUpdate);
     socket?.on("round-ended", onRoundEvent);
@@ -213,13 +229,14 @@ export default function GamePage() {
     socket?.on("pass-turn", onRoundEvent);
     socket?.on("bluff-resolved", onRoundEvent);
     socket?.on("clear-chat", onClearChat);
+    socket?.on("removed-from-room", onRemoved);
     socket?.on("error-message", onSocketError);
     socket?.on("disconnect", onDisconnect);
     socket?.on("connect", onConnect);
 
     return () => {
       socket?.off("game-updated", onGameUpdated);
-      socket?.off("receive-message", addChat);
+      socket?.off("receive-message", onReceiveMessage);
       socket?.off("winner", onWinner);
       socket?.off("timer-update", onTimerUpdate);
       socket?.off("round-ended", onRoundEvent);
@@ -228,22 +245,59 @@ export default function GamePage() {
       socket?.off("pass-turn", onRoundEvent);
       socket?.off("bluff-resolved", onRoundEvent);
       socket?.off("clear-chat", onClearChat);
+      socket?.off("removed-from-room", onRemoved);
       socket?.off("error-message", onSocketError);
       socket?.off("disconnect", onDisconnect);
       socket?.off("connect", onConnect);
     };
-  }, [addChat, fetchRoom, game?.players, navigate, resetChat, roomCode, setGame, setReconnecting, setTimer]);
+  }, [addChat, fetchRoom, game?.players, navigate, resetChat, roomCode, setGame, setReconnecting, setTimer, showChat, user?.id]);
 
   useEffect(() => {
-    if (timer.remainingSeconds <= 0 && !timeoutToastShownRef.current) {
+    if (showChat) {
+      setUnreadChatCount(0);
+    }
+  }, [showChat]);
+
+  useEffect(() => {
+    const preventUnload = (event) => {
+      if (allowExitRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const handlePopState = () => {
+      if (allowExitRef.current) {
+        return;
+      }
+
+      window.history.pushState(null, "", window.location.href);
+      toast.error("Use the Exit button to leave the room.");
+    };
+
+    window.history.pushState(null, "", window.location.href);
+    window.addEventListener("beforeunload", preventUnload);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("beforeunload", preventUnload);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    const displayedRemainingSeconds = timer.currentPlayerId === game?.currentPlayerId ? timer.remainingSeconds : 0;
+    if (displayedRemainingSeconds <= 0 && !timeoutToastShownRef.current) {
       timeoutToastShownRef.current = true;
       toast.error("Time over! Auto pass.");
     }
 
-    if (timer.remainingSeconds > 0) {
+    if (displayedRemainingSeconds > 0) {
       timeoutToastShownRef.current = false;
     }
-  }, [timer.remainingSeconds]);
+  }, [game?.currentPlayerId, timer.currentPlayerId, timer.remainingSeconds]);
 
   const topPlayers = game ? game.players.filter((player) => player.userId !== user?.id) : [];
 
@@ -263,6 +317,7 @@ export default function GamePage() {
   const currentPlayerLabel = currentPlayer?.username || "Waiting";
   const winner = game.players.find((player) => player.userId === game.winnerId);
   const handDisabled = !canPlay || !!game.winnerId || controlsLockedForWinnerAcceptance;
+  const displayedRemainingSeconds = timer.currentPlayerId === game.currentPlayerId ? timer.remainingSeconds : 0;
 
   const runAction = (key, emitter) => {
     setActionLoading((current) => ({ ...current, [key]: true }));
@@ -302,9 +357,7 @@ export default function GamePage() {
         const deltaY = Math.abs(touch.clientY - start.y);
 
         if (start.x <= 28 && deltaX > 90 && deltaY < 70) {
-          if (window.confirm("Do you want to exit this game table?")) {
-            navigate("/");
-          }
+          toast.error("Use the Exit button to leave the room.");
         }
 
         swipeStartRef.current = null;
@@ -317,6 +370,7 @@ export default function GamePage() {
             className="action-button-secondary gap-2 border border-red-400/20 text-red-200"
             onClick={() => {
               if (window.confirm("Are you sure you want to leave this game table?")) {
+                allowExitRef.current = true;
                 navigate("/");
               }
             }}
@@ -364,6 +418,7 @@ export default function GamePage() {
               className="action-button-secondary gap-2 border border-red-400/20 text-red-200"
               onClick={() => {
                 if (window.confirm("Are you sure you want to leave this game table?")) {
+                  allowExitRef.current = true;
                   navigate("/");
                 }
               }}
@@ -420,7 +475,7 @@ export default function GamePage() {
 
   <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
     <GameTimer
-      remainingSeconds={timer.remainingSeconds}
+      remainingSeconds={displayedRemainingSeconds}
       totalSeconds={timer.turnTimeLimit || 120}
     />
   </div>
@@ -650,10 +705,18 @@ export default function GamePage() {
       </div>
 
       <button
-        className="fixed bottom-5 right-5 z-20 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-slate-950/88 text-center text-xs font-semibold text-white shadow-2xl sm:h-20 sm:w-20 sm:text-sm"
+        className="fixed bottom-5 right-5 z-20 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-slate-950/88 text-center text-[11px] font-semibold text-white shadow-2xl sm:h-20 sm:w-20 sm:text-sm"
         onClick={() => setShowChat((value) => !value)}
       >
-        {showChat ? "Hide chat" : "Show chat"}
+        <div className="relative flex flex-col items-center gap-1">
+          <MessageCircleMore size={18} />
+          <span>{showChat ? "Hide" : "Chat"}</span>
+          {!showChat && unreadChatCount > 0 ? (
+            <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              {unreadChatCount > 9 ? "9+" : unreadChatCount}
+            </span>
+          ) : null}
+        </div>
       </button>
 
       <AnimatePresence>
