@@ -2,7 +2,9 @@ import { prisma } from "../utils/prisma.js";
 import { verifyToken } from "../utils/jwt.js";
 import {
   callBluff,
+  closeRoomCompletely,
   createGameForRoom,
+  getReconnectRemainingSeconds,
   getRemainingSeconds,
   loadActiveGame,
   markPlayerConnection,
@@ -23,12 +25,17 @@ const emitRoomSnapshot = (io, state) => {
 };
 
 const emitTimerSnapshot = (io, roomCode, state) => {
+  const reconnectRemainingSeconds = getReconnectRemainingSeconds(state);
+  const reconnectModeActive = !!state.reconnectGrace && reconnectRemainingSeconds > 0;
+
   io.to(roomCode).emit("timer-update", {
     roomCode,
     currentPlayerId: state.currentPlayerId,
-    remainingSeconds: getRemainingSeconds(state),
+    remainingSeconds: reconnectModeActive ? reconnectRemainingSeconds : getRemainingSeconds(state),
     turnStartedAt: state.turnStartedAt,
-    turnTimeLimit: state.turnTimeLimit,
+    turnTimeLimit: reconnectModeActive ? 120 : state.turnTimeLimit,
+    mode: reconnectModeActive ? "reconnect" : "turn",
+    reconnectGrace: state.reconnectGrace || null,
   });
 };
 
@@ -147,6 +154,12 @@ const scheduleDisconnectGraceMonitor = (io, roomCode, user) => {
         return;
       }
 
+      if (latestState?.players?.length && latestState.players.every((player) => !player.connected)) {
+        await closeRoomCompletely(roomCode);
+        clearTurnMonitor(roomCode);
+        return;
+      }
+
       const result = await removePlayerFromRoom({
         roomCode,
         userId: user.userId,
@@ -191,6 +204,39 @@ const scheduleTurnMonitor = (io, roomCode) => {
 
     if (state.winnerId) {
       clearTurnMonitor(roomCode);
+      return;
+    }
+
+    const reconnectRemaining = getReconnectRemainingSeconds(state);
+    if (state.reconnectGrace?.userId === state.currentPlayerId) {
+      if (reconnectRemaining > 0) {
+        return;
+      }
+
+      try {
+        const result = await removePlayerFromRoom({
+          roomCode,
+          userId: state.currentPlayerId,
+          reason: "offline",
+        });
+
+        if (!result.roomClosed && result.state) {
+          await emitLobbySnapshot(io, roomCode);
+          emitRoomSnapshot(io, result.state);
+          emitTimerSnapshot(io, roomCode, result.state);
+          emitRoundEvents(io, roomCode, result.state);
+          emitWinnerIfNeeded(io, roomCode, result.state);
+          if (result.state.winnerId) {
+            clearTurnMonitor(roomCode);
+          } else {
+            scheduleTurnMonitor(io, roomCode);
+          }
+        } else {
+          clearTurnMonitor(roomCode);
+        }
+      } catch (_error) {
+        clearTurnMonitor(roomCode);
+      }
       return;
     }
 
@@ -253,9 +299,18 @@ export const configureSocket = (io) => {
         socket.emit("timer-update", {
           roomCode: membership.room.roomCode,
           currentPlayerId: (updatedState || state).currentPlayerId,
-          remainingSeconds: getRemainingSeconds(updatedState || state),
+          remainingSeconds:
+            (updatedState || state).reconnectGrace && getReconnectRemainingSeconds(updatedState || state) > 0
+              ? getReconnectRemainingSeconds(updatedState || state)
+              : getRemainingSeconds(updatedState || state),
           turnStartedAt: (updatedState || state).turnStartedAt,
-          turnTimeLimit: (updatedState || state).turnTimeLimit,
+          turnTimeLimit:
+            (updatedState || state).reconnectGrace && getReconnectRemainingSeconds(updatedState || state) > 0
+              ? 120
+              : (updatedState || state).turnTimeLimit,
+          mode:
+            (updatedState || state).reconnectGrace && getReconnectRemainingSeconds(updatedState || state) > 0 ? "reconnect" : "turn",
+          reconnectGrace: (updatedState || state).reconnectGrace || null,
         });
       }
     }

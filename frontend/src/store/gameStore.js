@@ -8,7 +8,7 @@ export const useGameStore = create((set) => ({
   stats: null,
   selectedCards: [],
   claimedRank: "A",
-  timer: { remainingSeconds: 60, currentPlayerId: null, turnTimeLimit: 60 },
+  timer: { remainingSeconds: 60, currentPlayerId: null, turnTimeLimit: 60, mode: "turn", reconnectGrace: null },
   reconnecting: false,
   setGame(game) {
     set({ game });
@@ -19,6 +19,8 @@ export const useGameStore = create((set) => ({
         remainingSeconds: 60,
         currentPlayerId: null,
         turnTimeLimit: 60,
+        mode: "turn",
+        reconnectGrace: null,
         ...state.timer,
         ...timer,
       },
@@ -52,7 +54,7 @@ export const useGameStore = create((set) => ({
       chat: [],
       selectedCards: [],
       claimedRank: "A",
-      timer: { remainingSeconds: 60, currentPlayerId: null, turnTimeLimit: 60 },
+      timer: { remainingSeconds: 60, currentPlayerId: null, turnTimeLimit: 60, mode: "turn", reconnectGrace: null },
       reconnecting: false,
     });
   },

@@ -4,6 +4,7 @@ import { AppError } from "../utils/errors.js";
 import { prisma } from "../utils/prisma.js";
 
 const TURN_TIME_LIMIT = 60;
+const DISCONNECT_GRACE_SECONDS = 120;
 const MAX_WINNERS = 3;
 
 const sortHand = (hand) => hand.sort((left, right) => RANKS.indexOf(left.rank) - RANKS.indexOf(right.rank));
@@ -52,6 +53,7 @@ const normalizeState = (state) => {
   state.bluffReveal = state.bluffReveal ?? null;
   state.recentRoundEvent = state.recentRoundEvent ?? null;
   state.removedPlayerIds = state.removedPlayerIds || [];
+  state.reconnectGrace = state.reconnectGrace ?? null;
   state.lastAction = state.lastAction || "Round restored.";
   state.startedAt = state.startedAt || new Date().toISOString();
 
@@ -62,6 +64,15 @@ const getRemainingSeconds = (state) => {
   const startedAt = new Date(state.turnStartedAt).getTime();
   const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
   return Math.max(0, (state.turnTimeLimit || TURN_TIME_LIMIT) - elapsed);
+};
+
+const getReconnectRemainingSeconds = (state) => {
+  if (!state?.reconnectGrace?.expiresAt) {
+    return 0;
+  }
+
+  const remaining = Math.ceil((new Date(state.reconnectGrace.expiresAt).getTime() - Date.now()) / 1000);
+  return Math.max(0, remaining);
 };
 
 const sanitizePlayerForViewer = (player, viewerId) => ({
@@ -108,6 +119,7 @@ export const serializeStateForUser = (state, viewerId) => ({
   pendingWinnerId: state.pendingWinnerId || null,
   bluffReveal: state.bluffReveal && state.bluffReveal.visibleToUserId === viewerId ? state.bluffReveal : null,
   recentRoundEvent: state.recentRoundEvent || null,
+  reconnectGrace: state.reconnectGrace || null,
   startedAt: state.startedAt,
 });
 
@@ -176,6 +188,7 @@ const resetRound = (state, nextStarterId, message, eventType = "round-ended") =>
   state.consecutivePasses = 0;
   state.pendingWinnerId = null;
   state.bluffReveal = null;
+  state.reconnectGrace = null;
   state.recentRoundEvent = {
     type: eventType,
     message,
@@ -189,6 +202,7 @@ const resetRound = (state, nextStarterId, message, eventType = "round-ended") =>
 const setWinner = (state, winnerId, message) => {
   state.winnerId = winnerId;
   state.pendingWinnerId = null;
+  state.reconnectGrace = null;
   state.lastAction = message;
   state.recentRoundEvent = {
     type: "winner",
@@ -220,6 +234,7 @@ const finalizeWinningPlayer = (state, winnerId, nextStarterId, message) => {
   state.consecutivePasses = 0;
   state.pendingWinnerId = null;
   state.bluffReveal = null;
+  state.reconnectGrace = null;
 
   if (state.winners.length >= state.targetWinnerCount || getActivePlayers(state).length <= 1) {
     setWinner(state, winner.userId, `${winner.username} secured a winning spot and the match is complete.`);
@@ -338,6 +353,7 @@ export const createGameForRoom = async (room) => {
     targetWinnerCount: Math.max(1, Math.min(MAX_WINNERS, room.players.length - 1)),
     winners: [],
     removedPlayerIds: [],
+    reconnectGrace: null,
     lastAction: `${room.players[0].user.username} starts a new round.`,
     winnerId: null,
     pendingWinnerId: null,
@@ -448,6 +464,7 @@ export const playCards = async ({ roomCode, userId, cards, claimedRank }) => {
   state.pendingWinnerId = player.hand.length === 0 ? userId : null;
   state.bluffReveal = null;
   state.recentRoundEvent = null;
+  state.reconnectGrace = null;
   state.lastAction = `${player.username} played ${selectedCards.length} card${selectedCards.length > 1 ? "s" : ""} as ${roundRank}.`;
   updateTurn(state, getNextActivePlayerId(state, userId));
 
@@ -512,6 +529,7 @@ export const passTurn = async ({ roomCode, userId, reason = "manual" }) => {
   }
 
   state.consecutivePasses += 1;
+  state.reconnectGrace = null;
   const activePlayersCount = getActivePlayers(state).length;
 
   if (state.roundStarterPlayerId === userId && state.consecutivePasses >= activePlayersCount) {
@@ -589,6 +607,7 @@ export const callBluff = async ({ roomCode, callerId }) => {
   state.pendingWinnerId = null;
   state.roundStarterPlayerId = roundWinner.userId;
   updateTurn(state, roundWinner.userId);
+  state.reconnectGrace = null;
   state.lastAction = liar
     ? `${caller.username} caught ${lastPlayer.username}'s bluff. ${lastPlayer.username} takes the pile and ${caller.username} starts next.`
     : `${caller.username} called bluff on ${lastPlayer.username}, but ${lastPlayer.username} was truthful. ${caller.username} takes the pile and ${lastPlayer.username} starts next.`;
@@ -626,6 +645,22 @@ export const markPlayerConnection = async (roomCode, userId, connected) => {
   }
 
   player.connected = connected;
+  if (!connected && state.currentPlayerId === userId) {
+    state.reconnectGrace = {
+      userId,
+      username: player.username,
+      expiresAt: new Date(Date.now() + DISCONNECT_GRACE_SECONDS * 1000).toISOString(),
+    };
+    state.lastAction = `${player.username} disconnected. Waiting 02:00 for them to reconnect.`;
+  }
+
+  if (connected && state.reconnectGrace?.userId === userId) {
+    state.reconnectGrace = null;
+    state.lastAction = `${player.username} rejoined the table.`;
+    if (state.currentPlayerId === userId) {
+      state.turnStartedAt = new Date().toISOString();
+    }
+  }
   await updatePersistentGame(roomCode, state);
   return cloneState(state);
 };
@@ -710,6 +745,10 @@ export const removePlayerFromRoom = async ({ roomCode, userId, reason = "left" }
     state.pendingWinnerId = null;
   }
 
+  if (state.reconnectGrace?.userId === userId) {
+    state.reconnectGrace = null;
+  }
+
   if (state.roundStarterPlayerId === userId) {
     state.roundStarterPlayerId = nextActivePlayerId;
   }
@@ -751,4 +790,20 @@ export const removePlayerFromRoom = async ({ roomCode, userId, reason = "left" }
   };
 };
 
-export { TURN_TIME_LIMIT, getRemainingSeconds };
+export const closeRoomCompletely = async (roomCode) => {
+  const room = await prisma.room.findUnique({
+    where: { roomCode },
+    select: { id: true },
+  });
+
+  if (!room) {
+    activeGames.delete(roomCode);
+    return false;
+  }
+
+  activeGames.delete(roomCode);
+  await prisma.room.delete({ where: { id: room.id } });
+  return true;
+};
+
+export { DISCONNECT_GRACE_SECONDS, TURN_TIME_LIMIT, getReconnectRemainingSeconds, getRemainingSeconds };

@@ -17,7 +17,7 @@ const formatTime = (seconds) => {
   return `${mins}:${secs}`;
 };
 
-export default function GameTimer({ remainingSeconds = 60, totalSeconds = 60 }) {
+export default function GameTimer({ remainingSeconds = 60, totalSeconds = 60, label = "Turn" }) {
   const safeTotalSeconds = Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : 60;
   const safeRemainingSeconds = Number.isFinite(remainingSeconds)
     ? Math.min(safeTotalSeconds, Math.max(0, Math.floor(remainingSeconds)))
@@ -51,7 +51,7 @@ export default function GameTimer({ remainingSeconds = 60, totalSeconds = 60 }) 
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[8px] uppercase tracking-[0.22em] text-slate-400 sm:text-[9px] lg:text-[11px]">Turn</span>
+          <span className="text-[8px] uppercase tracking-[0.22em] text-slate-400 sm:text-[9px] lg:text-[11px]">{label}</span>
           <span className="text-[11px] font-black text-white sm:text-sm lg:text-lg">{formatTime(safeRemainingSeconds)}</span>
         </div>
       </div>

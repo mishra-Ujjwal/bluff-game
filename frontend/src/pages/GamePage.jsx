@@ -157,6 +157,8 @@ export default function GamePage() {
             remainingSeconds: room.activeGame.remainingTurnSeconds,
             currentPlayerId: room.activeGame.currentPlayerId,
             turnTimeLimit: room.activeGame.turnTimeLimit,
+            mode: room.activeGame.reconnectGrace ? "reconnect" : "turn",
+            reconnectGrace: room.activeGame.reconnectGrace || null,
           });
         }
       })
@@ -175,6 +177,8 @@ export default function GamePage() {
         remainingSeconds: payload.remainingTurnSeconds,
         currentPlayerId: payload.currentPlayerId,
         turnTimeLimit: payload.turnTimeLimit,
+        mode: payload.reconnectGrace ? "reconnect" : "turn",
+        reconnectGrace: payload.reconnectGrace || null,
       });
       if (payload.bluffReveal) {
         const revealKey = `${payload.bluffReveal.playerId}-${payload.bluffReveal.callerId}-${payload.bluffReveal.actualCards.length}`;
@@ -322,7 +326,7 @@ export default function GamePage() {
     };
   }, []);
 
-  const topPlayers = game ? game.players.filter((player) => player.userId !== user?.id && player.connected) : [];
+  const topPlayers = game ? game.players.filter((player) => player.userId !== user?.id) : [];
 
   if (!game) {
     return <FullPageLoader label="Reconnecting to the match..." />;
@@ -342,6 +346,7 @@ export default function GamePage() {
   const winner = game.players.find((player) => player.userId === game.winnerId);
   const handDisabled = !canPlay || !!game.winnerId || controlsLockedForWinnerAcceptance;
   const displayedRemainingSeconds = timer.currentPlayerId === game.currentPlayerId ? timer.remainingSeconds : 0;
+  const timerLabel = timer.mode === "reconnect" ? "Rejoin" : "Turn";
 
   const handleLeaveRoom = () => {
     if (!window.confirm("Are you sure you want to leave this game table?")) {
@@ -553,6 +558,7 @@ export default function GamePage() {
     <GameTimer
       remainingSeconds={displayedRemainingSeconds}
       totalSeconds={timer.turnTimeLimit || 60}
+      label={timerLabel}
     />
   </div>
 
