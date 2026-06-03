@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, Clock3, Copy, DoorOpen, MessageCircleMore, ShieldAlert, Trophy, UserRound, X } from "lucide-react";
+import { AlertTriangle, Clock3, Copy, DoorOpen, MessageCircleMore, ShieldAlert, Trophy, UserMinus, UserRound, X } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import ChatPanel from "../components/ChatPanel";
@@ -329,6 +329,7 @@ export default function GamePage() {
   }
 
   const me = game.me;
+  const isHost = game.hostId === user?.id;
   const isMyTurn = game.currentPlayerId === user?.id;
   const isNewRound = !game.currentRoundRank;
   const isRoundStarter = game.roundStarterPlayerId === user?.id;
@@ -363,6 +364,25 @@ export default function GamePage() {
 
       resetGameState();
       navigate("/");
+    });
+  };
+
+  const handleRemovePlayer = (targetUserId, username) => {
+    if (!isHost || !targetUserId) {
+      return;
+    }
+
+    if (!window.confirm(`Remove ${username} from this room?`)) {
+      return;
+    }
+
+    getSocket()?.emit("remove-player", { roomCode, targetUserId }, (response) => {
+      if (!response?.ok) {
+        toast.error(response?.message || "Unable to remove player.");
+        return;
+      }
+
+      toast.success(`${username} removed from room.`);
     });
   };
 
@@ -443,13 +463,22 @@ export default function GamePage() {
 
         <div className="scrollbar-thin flex gap-3 overflow-x-auto pb-1 lg:hidden">
           {topPlayers.map((player) => (
-            <div key={player.userId} className="min-w-[220px] shrink-0">
+            <div key={player.userId} className="relative min-w-[220px] shrink-0">
               <PlayerBadge
                 player={player}
                 isTurn={player.userId === game.currentPlayerId}
                 isMe={player.userId === user?.id}
                 compact
               />
+              {isHost ? (
+                <button
+                  className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-red-400/20 bg-slate-950/85 px-2.5 py-1 text-[10px] font-semibold text-red-200 transition hover:bg-red-950/70"
+                  onClick={() => handleRemovePlayer(player.userId, player.username)}
+                >
+                  <UserMinus size={12} />
+                  Remove
+                </button>
+              ) : null}
             </div>
           ))}
         </div>
@@ -467,13 +496,23 @@ export default function GamePage() {
 
           <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:mx-4 lg:max-w-[760px]">
             {topPlayers.map((player) => (
-              <PlayerBadge
-                key={player.userId}
-                player={player}
-                isTurn={player.userId === game.currentPlayerId}
-                isMe={player.userId === user?.id}
-                compact
-              />
+              <div key={player.userId} className="relative">
+                <PlayerBadge
+                  player={player}
+                  isTurn={player.userId === game.currentPlayerId}
+                  isMe={player.userId === user?.id}
+                  compact
+                />
+                {isHost ? (
+                  <button
+                    className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-red-400/20 bg-slate-950/85 px-2.5 py-1 text-[10px] font-semibold text-red-200 transition hover:bg-red-950/70"
+                    onClick={() => handleRemovePlayer(player.userId, player.username)}
+                  >
+                    <UserMinus size={12} />
+                    Remove
+                  </button>
+                ) : null}
+              </div>
             ))}
           </div>
 

@@ -142,7 +142,7 @@ export default function HomePage() {
                       const joinedRoom = await joinRoom(joinCode);
                       navigate(`/lobby/${joinedRoom.roomCode}`);
                     } catch (error) {
-                      toast.error(error.response?.data?.message || "Unable to join room.");
+                      toast.error( "Unable to join room."|| error.response?.data?.message || "Unable to join room.");
                     } finally {
                       setAction(null);
                     }

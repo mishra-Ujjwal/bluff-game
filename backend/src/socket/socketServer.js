@@ -13,6 +13,8 @@ import {
 } from "../services/gameService.js";
 
 const turnMonitors = new Map();
+const disconnectGraceMonitors = new Map();
+const DISCONNECT_GRACE_MS = 2 * 60 * 1000;
 
 const emitRoomSnapshot = (io, state) => {
   state.players.forEach((player) => {
@@ -107,6 +109,74 @@ const clearTurnMonitor = (roomCode) => {
   }
 };
 
+const getDisconnectKey = (roomCode, userId) => `${roomCode}:${userId}`;
+
+const clearDisconnectGraceMonitor = (roomCode, userId) => {
+  const key = getDisconnectKey(roomCode, userId);
+  const existing = disconnectGraceMonitors.get(key);
+  if (existing) {
+    clearTimeout(existing);
+    disconnectGraceMonitors.delete(key);
+  }
+};
+
+const scheduleDisconnectGraceMonitor = (io, roomCode, user) => {
+  clearDisconnectGraceMonitor(roomCode, user.userId);
+
+  const timeout = setTimeout(async () => {
+    disconnectGraceMonitors.delete(getDisconnectKey(roomCode, user.userId));
+
+    try {
+      const membership = await prisma.player.findFirst({
+        where: {
+          userId: user.userId,
+          room: { roomCode },
+        },
+        include: {
+          room: true,
+        },
+      });
+
+      if (!membership) {
+        return;
+      }
+
+      const latestState = await loadActiveGame(roomCode);
+      const latestPlayer = latestState?.players?.find((player) => player.userId === user.userId);
+      if (latestState && latestPlayer?.connected) {
+        return;
+      }
+
+      const result = await removePlayerFromRoom({
+        roomCode,
+        userId: user.userId,
+        reason: "offline",
+      });
+
+      if (!result.roomClosed) {
+        await emitLobbySnapshot(io, roomCode);
+        if (result.state) {
+          emitRoomSnapshot(io, result.state);
+          emitTimerSnapshot(io, roomCode, result.state);
+          emitRoundEvents(io, roomCode, result.state);
+          emitWinnerIfNeeded(io, roomCode, result.state);
+          if (result.state.winnerId) {
+            clearTurnMonitor(roomCode);
+          } else {
+            scheduleTurnMonitor(io, roomCode);
+          }
+        }
+      } else {
+        clearTurnMonitor(roomCode);
+      }
+    } catch (_error) {
+      clearDisconnectGraceMonitor(roomCode, user.userId);
+    }
+  }, DISCONNECT_GRACE_MS);
+
+  disconnectGraceMonitors.set(getDisconnectKey(roomCode, user.userId), timeout);
+};
+
 const scheduleTurnMonitor = (io, roomCode) => {
   clearTurnMonitor(roomCode);
 
@@ -171,17 +241,21 @@ export const configureSocket = (io) => {
     });
 
     for (const membership of roomMemberships) {
+      clearDisconnectGraceMonitor(membership.room.roomCode, user.userId);
       socket.join(membership.room.roomCode);
       const state = await loadActiveGame(membership.room.roomCode);
       if (state) {
-        await markPlayerConnection(membership.room.roomCode, user.userId, true);
-        socket.emit("game-updated", serializeStateForUser(state, user.userId));
+        const updatedState = await markPlayerConnection(membership.room.roomCode, user.userId, true);
+        if (updatedState) {
+          emitRoomSnapshot(io, updatedState);
+        }
+        socket.emit("game-updated", serializeStateForUser(updatedState || state, user.userId));
         socket.emit("timer-update", {
           roomCode: membership.room.roomCode,
-          currentPlayerId: state.currentPlayerId,
-          remainingSeconds: getRemainingSeconds(state),
-          turnStartedAt: state.turnStartedAt,
-          turnTimeLimit: state.turnTimeLimit,
+          currentPlayerId: (updatedState || state).currentPlayerId,
+          remainingSeconds: getRemainingSeconds(updatedState || state),
+          turnStartedAt: (updatedState || state).turnStartedAt,
+          turnTimeLimit: (updatedState || state).turnTimeLimit,
         });
       }
     }
@@ -226,6 +300,7 @@ export const configureSocket = (io) => {
           userId: user.userId,
           reason: "left",
         });
+        clearDisconnectGraceMonitor(normalizedRoomCode, user.userId);
 
         io.in(user.userId).socketsLeave(normalizedRoomCode);
         socket.leave(normalizedRoomCode);
@@ -265,19 +340,36 @@ export const configureSocket = (io) => {
           throw new Error("Only the host can remove players.");
         }
 
-        if (room.status !== "WAITING") {
-          throw new Error("Players can only be removed before the game starts.");
-        }
-
         if (!targetUserId || targetUserId === room.hostId) {
           throw new Error("Invalid player removal request.");
         }
 
-        await prisma.player.deleteMany({
-          where: {
-            roomId: room.id,
-            userId: targetUserId,
-          },
+        if (room.status === "WAITING") {
+          await prisma.player.deleteMany({
+            where: {
+              roomId: room.id,
+              userId: targetUserId,
+            },
+          });
+
+          io.in(targetUserId).socketsLeave(normalizedRoomCode);
+          io.to(targetUserId).emit("removed-from-room", {
+            roomCode: normalizedRoomCode,
+            message: "The host removed you from the room.",
+          });
+          await emitLobbySnapshot(io, normalizedRoomCode);
+          callback?.({ ok: true });
+          return;
+        }
+
+        if (room.status !== "PLAYING") {
+          throw new Error("Player removal is unavailable for this room state.");
+        }
+
+        const result = await removePlayerFromRoom({
+          roomCode: normalizedRoomCode,
+          userId: targetUserId,
+          reason: "removed",
         });
 
         io.in(targetUserId).socketsLeave(normalizedRoomCode);
@@ -286,6 +378,19 @@ export const configureSocket = (io) => {
           message: "The host removed you from the room.",
         });
         await emitLobbySnapshot(io, normalizedRoomCode);
+        if (!result.roomClosed && result.state) {
+          emitRoomSnapshot(io, result.state);
+          emitTimerSnapshot(io, normalizedRoomCode, result.state);
+          emitRoundEvents(io, normalizedRoomCode, result.state);
+          emitWinnerIfNeeded(io, normalizedRoomCode, result.state);
+          if (result.state.winnerId) {
+            clearTurnMonitor(normalizedRoomCode);
+          } else {
+            scheduleTurnMonitor(io, normalizedRoomCode);
+          }
+        } else if (result.roomClosed) {
+          clearTurnMonitor(normalizedRoomCode);
+        }
         callback?.({ ok: true });
       } catch (error) {
         callback?.({ ok: false, message: error.message });
@@ -433,28 +538,11 @@ export const configureSocket = (io) => {
       });
 
       for (const membership of disconnectMemberships) {
-        const result = await removePlayerFromRoom({
-          roomCode: membership.room.roomCode,
-          userId: user.userId,
-          reason: "offline",
-        });
-
-        if (!result.roomClosed) {
-          await emitLobbySnapshot(io, membership.room.roomCode);
-          if (result.state) {
-            emitRoomSnapshot(io, result.state);
-            emitTimerSnapshot(io, membership.room.roomCode, result.state);
-            emitRoundEvents(io, membership.room.roomCode, result.state);
-            emitWinnerIfNeeded(io, membership.room.roomCode, result.state);
-            if (result.state.winnerId) {
-              clearTurnMonitor(membership.room.roomCode);
-            } else {
-              scheduleTurnMonitor(io, membership.room.roomCode);
-            }
-          }
-        } else {
-          clearTurnMonitor(membership.room.roomCode);
+        const state = await markPlayerConnection(membership.room.roomCode, user.userId, false);
+        if (state) {
+          emitRoomSnapshot(io, state);
         }
+        scheduleDisconnectGraceMonitor(io, membership.room.roomCode, user);
       }
     });
   });

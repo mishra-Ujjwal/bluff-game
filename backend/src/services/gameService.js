@@ -719,7 +719,12 @@ export const removePlayerFromRoom = async ({ roomCode, userId, reason = "left" }
   }
 
   const activePlayers = getActivePlayers(state);
-  const removalLabel = reason === "offline" ? "went offline and was removed from the room." : "left the room.";
+  const removalLabel =
+    reason === "offline"
+      ? "went offline and was removed from the room."
+      : reason === "removed"
+        ? "was removed from the room by the host."
+        : "left the room.";
 
   if (activePlayers.length <= 1) {
     const survivor = activePlayers[0] || state.players[0];
