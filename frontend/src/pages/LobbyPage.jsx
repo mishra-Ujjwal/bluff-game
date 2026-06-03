@@ -23,7 +23,13 @@ export default function LobbyPage() {
   useEffect(() => {
     const socket = getSocket();
 
-    fetchRoom(roomCode).catch(() => toast.error("Unable to load room."));
+    fetchRoom(roomCode)
+      .then((loadedRoom) => {
+        if (loadedRoom?.activeGame) {
+          navigate(`/game/${roomCode}`);
+        }
+      })
+      .catch(() => toast.error("Unable to load room."));
     socket?.emit("join-room", { roomCode });
 
     const onPlayers = (payload) => {

@@ -140,9 +140,9 @@ export default function HomePage() {
                     setAction("join");
                     try {
                       const joinedRoom = await joinRoom(joinCode);
-                      navigate(`/lobby/${joinedRoom.roomCode}`);
+                      navigate(joinedRoom.activeGame ? `/game/${joinedRoom.roomCode}` : `/lobby/${joinedRoom.roomCode}`);
                     } catch (error) {
-                      toast.error( "Unable to join room."|| error.response?.data?.message || "Unable to join room.");
+                      toast.error(error.response?.data?.message || "Unable to join room.");
                     } finally {
                       setAction(null);
                     }

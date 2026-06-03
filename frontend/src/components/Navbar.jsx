@@ -11,7 +11,7 @@ export default function Navbar() {
     <header className="border-b border-red-950/10 bg-[#f6f1eb]/95 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
         <Link to="/" className="text-xl font-black tracking-[0.2em] text-red-950 sm:text-2xl">
-          BLUFF GAME
+          BLUFF
         </Link>
         <div className="flex items-center gap-2 sm:gap-3 text-sm">
           {user ? (
